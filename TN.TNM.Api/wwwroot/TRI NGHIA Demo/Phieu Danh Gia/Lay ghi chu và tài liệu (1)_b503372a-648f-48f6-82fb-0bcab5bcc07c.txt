@@ -1,0 +1,127 @@
+
+        public List<FileInFolderEntityModel> LayThongTinTaiLieuLienQuan(string objectType,int objectId)
+        {
+            #region Lấy danh sách tài liệu liên quan
+            var listNote = new List<NoteEntityModel>();
+           // var objectType = "RE_CAMP";
+            var folderUrl = context.Folder.FirstOrDefault(x => x.FolderType == objectType)?.Url;
+            var webRootPath = hostingEnvironment.WebRootPath + "\\";
+            var folder = context.Folder.FirstOrDefault(x => x.FolderType == objectType);
+            var listFileResult = context.FileInFolder
+                .Where(x => x.ObjectNumber == objectId && x.FolderId == folder.FolderId).Select(y =>
+                    new FileInFolderEntityModel
+                    {
+                        Size = y.Size,
+                        ObjectId = y.ObjectId,
+                        Active = y.Active,
+                        FileExtension = y.FileExtension,
+                        FileInFolderId = y.FileInFolderId,
+                        FileName = y.FileName,
+                        FolderId = y.FolderId,
+                        ObjectType = y.ObjectType,
+                        CreatedById = y.CreatedById,
+                        CreatedDate = y.CreatedDate,
+                        UpdatedById = y.UpdatedById,
+                        UpdatedDate = y.UpdatedDate
+                    }).OrderBy(z => z.CreatedDate).ToList();
+            listFileResult.ForEach(x =>
+            {
+                x.UploadByName = context.User.FirstOrDefault(u => u.UserId == x.CreatedById)?.UserName;
+            });
+            listFileResult.ForEach(item =>
+            {
+                var fileName = $"{item.FileName}.{item.FileExtension}";
+                var folderName = ConvertFolderUrl(folderUrl);
+                item.FileName = fileName;
+                item.FileUrl = Path.Combine(webRootPath, folderName, fileName);
+
+            });
+            #endregion
+            return listFileResult;
+        }
+        public List<NoteEntityModel> LayThongTinGhiChu(string objectType, int objectId)
+        {
+
+            #region Lấy thông tin ghi chú
+            // list ghi chú          
+            var folderUrl = context.Folder.FirstOrDefault(x => x.FolderType == objectType)?.Url;
+            var webRootPath = hostingEnvironment.WebRootPath + "\\";
+           // var folder = context.Folder.FirstOrDefault(x => x.FolderType == objectType);
+            var listNote = context.Note.Where(x =>
+                    x.ObjectNumber == objectId && x.ObjectType == objectType && x.Active == true)
+                .Select(y => new NoteEntityModel
+                {
+                    NoteId = y.NoteId,
+                    Description = y.Description,
+                    Type = y.Type,
+                    ObjectId = y.ObjectId,
+                    ObjectType = y.ObjectType,
+                    NoteTitle = y.NoteTitle,
+                    Active = y.Active,
+                    CreatedById = y.CreatedById,
+                    CreatedDate = y.CreatedDate,
+                    UpdatedById = y.UpdatedById,
+                    UpdatedDate = y.UpdatedDate,
+                    ResponsibleName = "",
+                    ResponsibleAvatar = "",
+                    NoteDocList = new List<NoteDocumentEntityModel>()
+                }).ToList();
+            if (listNote.Count > 0)
+            {
+                var listNoteId = listNote.Select(x => x.NoteId).ToList();
+                var listUser = context.User.ToList();
+                var _listAllEmployee = context.Employee.ToList();
+                var listNoteDocument = context.NoteDocument.Where(x => listNoteId.Contains(x.NoteId)).Select(
+                    y => new NoteDocumentEntityModel
+                    {
+                        DocumentName = y.DocumentName,
+                        DocumentSize = y.DocumentSize,
+                        DocumentUrl = y.DocumentUrl,
+                        CreatedById = y.CreatedById,
+                        CreatedDate = y.CreatedDate,
+                        UpdatedById = y.UpdatedById,
+                        UpdatedDate = y.UpdatedDate,
+                        NoteDocumentId = y.NoteDocumentId,
+                        NoteId = y.NoteId
+                    }
+                ).ToList();
+                var listFileInFolder = context.FileInFolder.Where(x => listNoteId.Contains((Guid)x.ObjectId))
+                    .ToList();
+                listFileInFolder.ForEach(item =>
+                {
+                    var file = new NoteDocumentEntityModel
+                    {
+                        DocumentName = item.FileName.Substring(0, item.FileName.LastIndexOf("_")),
+                        DocumentSize = item.Size,
+                        CreatedById = item.CreatedById,
+                        CreatedDate = item.CreatedDate,
+                        UpdatedById = item.UpdatedById,
+                        UpdatedDate = item.UpdatedDate,
+                        NoteDocumentId = item.FileInFolderId,
+                        NoteId = (Guid)item.ObjectId
+                    };
+                    var fileName = $"{item.FileName}.{item.FileExtension}";
+                    var folderName = ConvertFolderUrl(folderUrl);
+
+                    file.DocumentUrl = Path.Combine(webRootPath, folderName, fileName);
+
+                    listNoteDocument.Add(file);
+                });
+                listNote.ForEach(item =>
+                {
+                    var _user = listUser.FirstOrDefault(x => x.UserId == item.CreatedById);
+                    if (_user != null)
+                    {
+                        var _employee = _listAllEmployee.FirstOrDefault(x => x.EmployeeId == _user.EmployeeId);
+                        item.ResponsibleName = _employee.EmployeeName;
+                        item.NoteDocList = listNoteDocument.Where(x => x.NoteId == item.NoteId)
+                            .OrderBy(z => z.UpdatedDate).ToList();
+                    }
+                });
+                // Sắp xếp lại listnote
+                listNote = listNote.OrderByDescending(x => x.CreatedDate).ToList();
+            }
+            #endregion
+            return listNote;
+        }
+       

@@ -1,0 +1,26 @@
+IF NOT EXISTS
+(
+SELECT 
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_SCHEMA = 'dbo'
+       AND TABLE_NAME = 'NhanVienKyDanhGia'
+)
+BEGIN
+
+       CREATE TABLE [dbo].NhanVienKyDanhGia
+       (
+              NhanVienKyDanhGiaId int identity(1,1),
+	      ParentId [int] NULL,
+	      Level [Int] NOT NULL, -- Root = 0
+	      KyDanhGiaId int not null, -- 
+	      NguoiDanhGiaId [UNIQUEIDENTIFIER] not NULL, -- Level = 0 Người đánh giá cấp phòng, Level = 1 Người đánh giá cấp team, Level = 2 Người đánh giá cấp nhân viên
+	      NguoiDuocDanhGiaId [UNIQUEIDENTIFIER] NOT NULL, -- 
+	      OrganizationId [UNIQUEIDENTIFIER] not NULL, -- Phòng ban của người được đánh giá
+	      QuyLuong [decimal](18, 2) NOT NULL DEFAULT 0, --
+	      XemLuong [Bit] NOT NULL DEFAULT 0, -- 0 Không hiển thị lương, 1 Hiển thị lương
+              [CreatedById] [UNIQUEIDENTIFIER] NOT NULL,
+              [CreatedDate] [DATETIME] NOT NULL,
+              [TenantId] [uniqueidentifier] NULL
+              PRIMARY KEY (NhanVienKyDanhGiaId)
+       )
+END
