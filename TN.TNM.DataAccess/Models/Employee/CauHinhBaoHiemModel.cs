@@ -20,6 +20,8 @@ namespace TN.TNM.DataAccess.Models.Employee
         public decimal TiLePhanBoMucDongBhtncuaNsdld { get; set; }
         public decimal TiLePhanBoMucDongBhtnnncuaNld { get; set; }
         public decimal TiLePhanBoMucDongBhtnnncuaNsdld { get; set; }
+        public decimal MucDongToiDaBHTN { get; set; }
+        public decimal MucLuongCoSoBHTN { get; set; }
 
         public CauHinhBaoHiemModel()
         {

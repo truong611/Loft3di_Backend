@@ -24,5 +24,8 @@ namespace TN.TNM.DataAccess.Databases.Entities
         public DateTime? UpdatedDate { get; set; }
         public Guid? TenantId { get; set; }
         public decimal MucLuongCoSo { get; set; }
+        public decimal MucLuongCoSoBHTN { get; set; }
+        public decimal MucDongToiDaBHTN { get; set; }
+
     }
 }

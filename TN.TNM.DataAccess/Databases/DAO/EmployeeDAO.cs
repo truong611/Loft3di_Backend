@@ -1759,7 +1759,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 {
                     StatusCode = System.Net.HttpStatusCode.OK,
                     CurrentOrganizationId = currentUserOrgId,
-                    EmployeeList = employeeList,
+                    EmployeeList = employeeList.OrderBy(x => x.EmployeeCode).ToList(),
                     IsNhanSu = isNhanSu
                 };
             }
@@ -3518,17 +3518,17 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     };
                 }
 
-                var countSoPhuLuc = context.HopDongNhanSu.Count(x =>
-                    x.SoPhuLuc.ToLower().Trim() == hopDongNhanSu.SoPhuLuc.ToLower().Trim());
+                //var countSoPhuLuc = context.HopDongNhanSu.Count(x =>
+                //    x.SoPhuLuc.ToLower().Trim() == hopDongNhanSu.SoPhuLuc.ToLower().Trim());
 
-                if (countSoPhuLuc > 0)
-                {
-                    return new CreateHopDongNhanSuResult()
-                    {
-                        MessageCode = "Số phụ lục đã tồn tại trên hệ thống",
-                        StatusCode = System.Net.HttpStatusCode.ExpectationFailed,
-                    };
-                }
+                //if (countSoPhuLuc > 0)
+                //{
+                //    return new CreateHopDongNhanSuResult()
+                //    {
+                //        MessageCode = "Số phụ lục đã tồn tại trên hệ thống",
+                //        StatusCode = System.Net.HttpStatusCode.ExpectationFailed,
+                //    };
+                //}
 
                 //Ngày ký hợp đồng không được trùng với ngày ký hợp đồng đã tạo
                 var countNgayKyHopDong = context.HopDongNhanSu
@@ -3839,18 +3839,18 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     };
                 }
 
-                var countSoPhuLuc = context.HopDongNhanSu.Count(x =>
-                    x.HopDongNhanSuId != parameter.HopDongNhanSu.HopDongNhanSuId &&
-                    x.SoPhuLuc.ToLower().Trim() == parameter.HopDongNhanSu.SoPhuLuc.ToLower().Trim());
+                //var countSoPhuLuc = context.HopDongNhanSu.Count(x =>
+                //    x.HopDongNhanSuId != parameter.HopDongNhanSu.HopDongNhanSuId &&
+                //    x.SoPhuLuc.ToLower().Trim() == parameter.HopDongNhanSu.SoPhuLuc.ToLower().Trim());
 
-                if (countSoPhuLuc > 0)
-                {
-                    return new UpdateHopDongNhanSuResult()
-                    {
-                        MessageCode = "Số phụ lục đã tồn tại trên hệ thống",
-                        StatusCode = System.Net.HttpStatusCode.ExpectationFailed,
-                    };
-                }
+                //if (countSoPhuLuc > 0)
+                //{
+                //    return new UpdateHopDongNhanSuResult()
+                //    {
+                //        MessageCode = "Số phụ lục đã tồn tại trên hệ thống",
+                //        StatusCode = System.Net.HttpStatusCode.ExpectationFailed,
+                //    };
+                //}
 
                 if (parameter.HopDongNhanSu.NgayKyHopDong != null && parameter.HopDongNhanSu.NgayKetThucHopDong != null)
                 {
@@ -12134,6 +12134,10 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         cauHinhBaoHiem.TiLePhanBoMucDongBhtncuaNsdld = _cauHinhBaoHiem.TiLePhanBoMucDongBhtncuaNsdld;
                         cauHinhBaoHiem.TiLePhanBoMucDongBhtnnncuaNld = _cauHinhBaoHiem.TiLePhanBoMucDongBhtnnncuaNld;
                         cauHinhBaoHiem.TiLePhanBoMucDongBhtnnncuaNsdld = _cauHinhBaoHiem.TiLePhanBoMucDongBhtnnncuaNsdld;
+
+                        cauHinhBaoHiem.MucDongToiDaBHTN = _cauHinhBaoHiem.MucDongToiDaBHTN;
+                        cauHinhBaoHiem.MucLuongCoSoBHTN = _cauHinhBaoHiem.MucLuongCoSoBHTN;
+
                         cauHinhBaoHiem.UpdatedById = parameter.UserId;
                         cauHinhBaoHiem.UpdatedDate = DateTime.Now;
 
@@ -22460,10 +22464,29 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         return new CapNhatNgayApDungDeXuatResult()
                         {
                             StatusCode = HttpStatusCode.Forbidden,
-                            Message = "Không tìm thấy nhân viên trong đề xuất"
+                            Message = "Đề xuất chức vụ không tồn tại trên hệ thống!"
                         };
                     }
                     deXuatChucVu.NgayApDung = parameter.NgayApDung;
+
+                    //Nếu ngày áp dụng <= ngày hiện tại thì cập nhật chức vụ cho nhân viên
+                    if(parameter.NgayApDung.Date <= DateTime.Now.Date)
+                    {
+                        //Lấy nhân viên chờ phê duyệt, api sau đó sẽ chuyền từ chờ phê duyệt sang phê duyệt
+                        var trangThaiPheDuyetChucVuEmp = GeneralList.GetTrangThais("DXThayDoiChucVuNhanVien").FirstOrDefault(x => x.Value == 2).Value;
+                        var listEmpDeXuatChucVuDaPheDuyet = context.NhanVienDeXuatThayDoiChucVu.Where(x => x.DeXuatThayDoiChucVuId == parameter.DeXuatId
+                                            && x.TrangThai == trangThaiPheDuyetChucVuEmp).ToList();
+                        var listEmpId = listEmpDeXuatChucVuDaPheDuyet.Select(x => x.EmployeeId).ToList();
+
+                        var listEmpInfor = context.Employee.Where(x => listEmpId.Contains(x.EmployeeId)).ToList();
+
+                        listEmpInfor.ForEach(item =>
+                        {
+                            var chucVuDeXuatMoiEmp = listEmpDeXuatChucVuDaPheDuyet.FirstOrDefault(x => x.EmployeeId == item.EmployeeId)?.ChucVuDeXuatId;
+                            item.PositionId = chucVuDeXuatMoiEmp;
+                        });
+                        context.UpdateRange(listEmpInfor);
+                    }
                     context.DeXuatThayDoiChucVu.Update(deXuatChucVu);
                     context.SaveChanges();
                 }
@@ -24717,7 +24740,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                             emp.IsManager = false;
                             emp.EmployeeCode = item.EmployeeCode;
                             emp.MucPhi = item.MucPhi != null ? item.MucPhi.Value : 0;
-                            emp.BangCapCaoNhatDatDuocId = item.BangCapCaoNhatDatDuocId.Value;
+                            emp.BangCapCaoNhatDatDuocId = item.BangCapCaoNhatDatDuocId;
                             emp.BienSo = item.BienSo;
                             emp.ChuyenNganhHoc = item.ChuyenNganhHoc;
                             emp.CodeMayChamCong = item.CodeMayChamCong;
@@ -24729,7 +24752,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                             emp.LoaiXe = item.LoaiXe;
                             emp.MaSoThueCaNhan = item.MaSoThueCaNhan;
                             emp.MaTest = item.MaTest;
-                            emp.NguonTuyenDungId = item.NguonTuyenDungId.Value;
+                            emp.NguonTuyenDungId = item.NguonTuyenDungId;
                             emp.OrganizationId = item.OrganizationId;
                             emp.QuocTich = item.QuocTich;
                             emp.SubCode1Value = item.SubCode1;
@@ -26729,7 +26752,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                             }
 
                             //kiểm tra xem hợp đồng mới tạo có phải là hợp đồng cũ nhất của nhân viên
-                            var hopDongNhanSuOld = context.HopDongNhanSu.Where(x => x.EmployeeId == hopDong.EmployeeId).OrderBy(x => x.NgayKyHopDong).FirstOrDefault();
+                            var hopDongNhanSuOld = listAllHopDongNhanSu.Where(x => x.EmployeeId == hopDong.EmployeeId).OrderBy(x => x.NgayKyHopDong).FirstOrDefault();
                             if (hopDongNhanSuOld.HopDongNhanSuId == hopDong.HopDongNhanSuId)
                             {
                                 employee.StartDateMayChamCong = hopDong?.NgayBatDauLamViec;

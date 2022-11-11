@@ -5152,21 +5152,21 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     dataRow.ColumnKey = "stt";
                     dataRow.ColumnValue = stt_tck.ToString();
                     dataRow.ValueType = ValueTypeEnum.NUMBER;
-                    dataRow.Width = "40px!important";
+                    dataRow.Width = "40px";
                     dataRow.TextAlign = "center";
                     listDataRow.Add(dataRow);
 
                     var dataRow2 = new DataRowModel();
                     dataRow2.ColumnKey = "employeeCode";
                     dataRow2.ColumnValue = item.EmployeeCode;
-                    dataRow2.Width = "150px";
+                    dataRow2.Width = "100px";
                     dataRow2.TextAlign = "center";
                     listDataRow.Add(dataRow2);
 
                     var dataRow3 = new DataRowModel();
                     dataRow3.ColumnKey = "subCode1";
                     dataRow3.ColumnValue = item.SubCode1;
-                    dataRow3.Width = "130px";
+                    dataRow3.Width = "100px";
                     dataRow3.TextAlign = "left";
                     listDataRow.Add(dataRow3);
 
@@ -5249,7 +5249,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         ColumnValue = "#",
                         Rowspan = 0,
                         Colspan = 0,
-                        Width = "90px",
+                        Width = "40px",
                     },
                     new DataHeaderModel()
                     {
@@ -5257,7 +5257,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         ColumnValue = "Mã nhân viên",
                         Rowspan = 0,
                         Colspan = 0,
-                        Width = "200px",
+                        Width = "100px",
                     },
                     new DataHeaderModel()
                     {
@@ -5281,7 +5281,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         ColumnValue = "Chức vụ",
                         Rowspan = 0,
                         Colspan = 0,
-                        Width = "200px",
+                        Width = "130px",
                     },
                     new DataHeaderModel()
                     {
@@ -5289,7 +5289,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         ColumnValue = "Loại HĐ",
                         Rowspan = 0,
                         Colspan = 0,
-                        Width = "200px",
+                        Width = "300px",
                     },
                 };
 
@@ -11392,9 +11392,14 @@ namespace TN.TNM.DataAccess.Databases.DAO
             decimal mucGiamTruNguoiPhuThuoc = cauHinhGiamTruNguoiPhuThuoc?.MucGiamTru ?? 0;
             var listContact = context.Contact.Where(x => x.ObjectType == ContactObjectType.EMP_CON).ToList();
             var listLuongCtBaoHiem = context.LuongCtBaoHiem.Where(x => x.KyLuongId == kyLuongId).ToList();
+            var listAllHdns = context.HopDongNhanSu.Where(x => listEmpId.Contains(x.EmployeeId)).ToList();
+
+            var loaiHDCateTypeId = context.CategoryType.FirstOrDefault(x => x.CategoryTypeCode == "LHDNS").CategoryTypeId;
+            var listLoaiHd = context.Category.Where(x => x.CategoryTypeId == loaiHDCateTypeId).ToList();
 
             listEmp.ForEach(item =>
             {
+                
                 var luongCtGiamTruTruocThue = new LuongCtGiamTruTruocThue();
                 luongCtGiamTruTruocThue.KyLuongId = kyLuongId;
                 luongCtGiamTruTruocThue.EmployeeId = item.Emp.EmployeeId;
@@ -11440,6 +11445,26 @@ namespace TN.TNM.DataAccess.Databases.DAO
 
                 var exists = listOld.FirstOrDefault(x => x.EmployeeId == item.Emp.EmployeeId);
 
+                //Lấy hợp đồng mới nhất của emp 
+                var listHopDongEmp = listAllHdns.Where(x => x.EmployeeId == item.Emp.EmployeeId).ToList();
+                if (listHopDongEmp.Count > 0)
+                {
+                    var hdongMoiNhatId = listHopDongEmp.First().LoaiHopDongId;
+                    var loaiHopDong = listLoaiHd.FirstOrDefault(x => x.CategoryId == hdongMoiNhatId)?.CategoryCode;
+                    if (loaiHopDong.Contains("HĐĐT"))
+                    {
+                        if (exists == null)
+                        {
+                            luongCtGiamTruTruocThue.GiamTruCaNhan = 0;
+                        }
+                        //Update
+                        else
+                        {
+                            exists.GiamTruCaNhan = 0;
+                        }
+                    }
+                }
+
                 //Create
                 if (exists == null)
                 {
@@ -11482,6 +11507,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
             var listLuongCtBaoHiem = context.LuongCtBaoHiem.Where(x => x.KyLuongId == kyLuongId).ToList();
             var cauHinhPhiCongDoan = context.KinhPhiCongDoan.FirstOrDefault();
             var mucDongCuaNhanVien = cauHinhPhiCongDoan?.MucDongNhanVien ?? 0;
+
 
             listEmp.ForEach(item =>
             {
@@ -11804,8 +11830,31 @@ namespace TN.TNM.DataAccess.Databases.DAO
             var listLuongCtGiamTruSauThue = context.LuongCtGiamTruSauThue.Where(x => x.KyLuongId == kyLuongId).ToList();
             var listLuongCtHoanLaiSauThue = context.LuongCtHoanLaiSauThue.Where(x => x.KyLuongId == kyLuongId).ToList();
 
+            var listAllHdns = context.HopDongNhanSu.Where(x => listEmpId.Contains(x.EmployeeId)).ToList();
+
+            var loaiHDCateTypeId = context.CategoryType.FirstOrDefault(x => x.CategoryTypeCode == "LHDNS").CategoryTypeId;
+            var listLoaiHd = context.Category.Where(x => x.CategoryTypeId == loaiHDCateTypeId).ToList();
+
+            var codeHD = "";
             listEmp.ForEach(item =>
             {
+                //Lấy hợp đồng mới nhất của emp 
+                var listHopDongEmp = listAllHdns.Where(x => x.EmployeeId == item.Emp.EmployeeId).ToList();
+                if (listHopDongEmp.Count > 0)
+                {
+                    var hdongMoiNhatId = listHopDongEmp.First().LoaiHopDongId;
+                    var loaiHopDong = listLoaiHd.FirstOrDefault(x => x.CategoryId == hdongMoiNhatId)?.CategoryCode;
+                    if (loaiHopDong.Contains("HĐĐT"))
+                    {
+                        codeHD = "HĐĐT";
+                    }
+                    if (loaiHopDong.Contains("HÐLÐ"))
+                    {
+                        codeHD = "HÐLÐ";
+                    }
+                }
+
+
                 var tongHopChamCong = listTongHopChamCong.FirstOrDefault(x => x.EmployeeId == item.Emp.EmployeeId);
 
                 var luongTongHop = new LuongTongHop();
@@ -11975,6 +12024,15 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 luongTongHop.TongThuNhapChiuThueSauGiamTru = luongTongHop.TongThuNhapSauKhiBoCacKhoanKhongTinhThue - luongTongHop.GiamTruTruocThue +
                                                              luongTongHop.ThuNhapChiDuaVaoTinhThue;
 
+                if (codeHD == "HĐĐT" && luongTongHop.TongThuNhapChiuThueSauGiamTru < 2000000)
+                {
+                    luongTongHop.TongThuNhapChiuThueSauGiamTru = 0;
+                }
+                if (codeHD == "HÐLÐ" && luongTongHop.TongThuNhapChiuThueSauGiamTru < 0)
+                {
+                    luongTongHop.TongThuNhapChiuThueSauGiamTru = 0;
+                }
+
                 #endregion
 
                 #region Tổng thuế TNCN phải trả bởi công ty và NLĐ
@@ -11989,9 +12047,18 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     if (cauHinh == null) luongTongHop.TongThueTncnCtyVaNld = 0;
                     else
                     {
-                        luongTongHop.TongThueTncnCtyVaNld =
+                        if (codeHD == "HĐĐT")
+                        {
+                           luongTongHop.TongThueTncnCtyVaNld =
+                           Math.Round(luongTongHop.TongThuNhapChiuThueSauGiamTru * 10 / 100 -
+                                      cauHinh.SoBiTruTheoCongThuc, 0);
+                        }
+                        else
+                        {
+                            luongTongHop.TongThueTncnCtyVaNld =
                             Math.Round(luongTongHop.TongThuNhapChiuThueSauGiamTru * cauHinh.PhanTramThue / 100 -
                                        cauHinh.SoBiTruTheoCongThuc, 0);
+                        }
                     }
                 }
 
@@ -13971,6 +14038,10 @@ namespace TN.TNM.DataAccess.Databases.DAO
             var listConTactEmp = context.Contact.Where(x => x.ObjectType == "EMP" && lisempId.Contains(x.ObjectId)).ToList();
             var listAllProvince = context.Province.Where(x => x.IsShowAsset == true).ToList();
             var listOrg = context.Organization.ToList();
+
+            //Loại OT
+            var typeLoaiOt = context.CategoryType.FirstOrDefault(x => x.CategoryTypeCode == "LOAIOT");
+            var listLoaiOt = context.Category.Where(x => x.CategoryTypeId == typeLoaiOt.CategoryTypeId).ToList();
             #endregion
 
             #region Các dòng data của từng nhân viên
@@ -14009,49 +14080,55 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     var chamCongOt = listChamCongOt.FirstOrDefault(x =>
                         x.NgayChamCong.Date == data.Date && x.EmployeeId == item.EmployeeId);
                  
-
-                    //Nếu nhân viên có dữ liệu chấm công theo ngày này
+                    //Nếu nhân viên có dữ liệu chấm công OT theo ngày này
                     if (chamCongOt != null)
                     {
-                        #region Sáng
-                        index++;
-                        var _vaoSang = new DataRowModel();
-                        _vaoSang.ColumnKey = "index_" + index;
-                        _vaoSang.ColumnValue = (chamCongOt.GioVaoSang != null || chamCongOt.GioRaSang != null) ? "X" : "";
-                        listDataRow.Add(_vaoSang);
-                        #endregion
-
-
-                        #region Tối
                         index++;
                         var _vaoChieu = new DataRowModel();
                         _vaoChieu.ColumnKey = "index_" + index;
-                        _vaoChieu.ColumnValue = (chamCongOt.GioVaoChieu != null || chamCongOt.GioRaChieu != null) ? "X" : "";
+                        var loaiOt = listLoaiOt.FirstOrDefault(x => x.CategoryId == chamCongOt.LoaiOtId);
+                        _vaoChieu.ColumnValue = loaiOt != null ? GetLoaiOTCode(loaiOt.CategoryCode) : "";
                         listDataRow.Add(_vaoChieu);
-                        #endregion
-
-                        #region chiều
-                        index++;
-                        var _vaoToi = new DataRowModel();
-                        _vaoToi.ColumnKey = "index_" + index;
-                        _vaoToi.ColumnValue = (chamCongOt.GioVaoToi != null || chamCongOt.GioRaToi != null) ? "X" : "";
-                        listDataRow.Add(_vaoToi);
-                        #endregion
-
                     }
                     //Nếu nhân viên không có dữ liệu chấm công
                     else
                     {
-                        for (int i = 0; i < 3; i++)
-                        {
-                            index++;
-                            var _dataRow = new DataRowModel();
-                            _dataRow.ColumnKey = "index_" + index;
-                            _dataRow.ColumnValue = "--";
-                            listDataRow.Add(_dataRow);
-                        }
+                        index++;
+                        var _vaoChieu = new DataRowModel();
+                        _vaoChieu.ColumnKey = "index_" + index;
+                        _vaoChieu.ColumnValue = "-";
+                        listDataRow.Add(_vaoChieu);
                     }
                 });
+
+                listLoaiOt.ForEach(loaiOT =>
+                {
+                    var dataRow5x = new DataRowModel();
+                    dataRow5x.ColumnKey = loaiOT.CategoryCode;
+                    dataRow5x.ColumnValue = listChamCongOt.Where(x => x.EmployeeId == item.EmployeeId && x.LoaiOtId == loaiOT.CategoryId).Count().ToString();
+                    listDataRow.Add(dataRow5x);
+                });
+
+                //Thêm cột số liệu cụ thể cho từng loại OT
+                //listLoaiOt.ForEach(loaiOT =>
+                //{
+                //    var dataRow5x = new DataRowModel();
+                //    dataRow5x.ColumnKey = loaiOT.CategoryCode;
+                //    dataRow5x.ColumnValue = listChamCongOt.Where(x => x.EmployeeId == item.EmployeeId && x.LoaiOtId == loaiOT.CategoryId).Count().ToString();
+                //    listDataRow.Add(dataRow5x);
+
+                //    var dataRow6x = new DataRowModel();
+                //    dataRow6x.ColumnKey = loaiOT.CategoryCode;
+                //    dataRow6x.ColumnValue = listChamCongOt.Where(x => x.EmployeeId == item.EmployeeId && x.LoaiOtId == loaiOT.CategoryId).Count().ToString();
+                //    listDataRow.Add(dataRow6x);
+
+                //    var dataRow7x = new DataRowModel();
+                //    dataRow7x.ColumnKey = loaiOT.CategoryCode;
+                //    dataRow7x.ColumnValue = listChamCongOt.Where(x => x.EmployeeId == item.EmployeeId && x.LoaiOtId == loaiOT.CategoryId).Count().ToString();
+                //    listDataRow.Add(dataRow7x);
+
+                //});
+
 
                 var team = "";
                 if(item.OrganizationId != null)
@@ -14079,32 +14156,16 @@ namespace TN.TNM.DataAccess.Databases.DAO
             });
             #endregion
 
-            //#region Thêm row tổng kết - TN
+            #region Thêm row tổng kết cho từng loại OT
+            listLoaiOt.ForEach(item =>
+            {
+                var listDataRowTK = new List<DataRowModel>();
+                TongKetBaoCaoTongHopOT(out listDataRowTK, listDate, listChamCongOt, item.CategoryId, item.CategoryName, item.CategoryCode, listLoaiOt);
+                listDataRoot.Add(listDataRowTK);
+            });
+            #endregion
 
-            //var listDataRowTK = new List<DataRowModel>();
-            //var listTN = new List<int>() { 14 }; //Tại nhà
-            //TongKetNghiDotXuat(out listDataRowTK, listDate, listChamCong, listTN, "Tổng làm việc tại nhà");
-            //listDataRoot.Add(listDataRowTK);
 
-            //#endregion
-
-            //#region Tổng nghỉ báo trước
-
-            //var listDataRowBT = new List<DataRowModel>();
-            //var listNghiBaoTrc = new List<int>() { 1, 5, 8 }; //Nghỉ báo trc
-            //TongKetNghiDotXuat(out listDataRowBT, listDate, listChamCong, listNghiBaoTrc, "Tổng nghỉ báo trước"); 
-            //listDataRoot.Add(listDataRowBT);
-
-            //#endregion
-
-            //#region Tổng nghỉ đột xuất
-
-            //var listDataRowTYN = new List<DataRowModel>();
-            //var listNghiBaoDotXuat = new List<int>() { 9 }; //Tự ý nghỉ
-            //TongKetNghiDotXuat(out listDataRowTYN, listDate, listChamCong, listNghiBaoDotXuat, "Tổng nghỉ đột xuất"); 
-            //listDataRoot.Add(listDataRowTYN);
-
-            //#endregion
 
 
             listData = listDataRoot;
@@ -14164,6 +14225,14 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 listHeader1.Add(_dataHeader);
             });
 
+            listLoaiOt.ForEach(loaiOT =>
+            {
+                var dataRow5x = new DataHeaderModel();
+                dataRow5x.ColumnKey = loaiOT.CategoryCode;
+                dataRow5x.ColumnValue = loaiOT.CategoryName;
+                listHeader1.Add(dataRow5x);
+            });
+
             listHeader1.Add(new DataHeaderModel()
             {
                 ColumnKey = "congTac",
@@ -14183,37 +14252,6 @@ namespace TN.TNM.DataAccess.Databases.DAO
             });
 
             listDataHeader.Add(listHeader1);
-
-            /* tr2 */
-            var listHeader2 = new List<DataHeaderModel>();
-            int _indexCa = 0;
-            listDate.ForEach(date =>
-            {
-                for (int i = 1; i <= 3; i++)
-                {
-                    _indexCa++;
-                    var _dataHeader = new DataHeaderModel();
-                    _dataHeader.ColumnKey = "index_ca_" + _indexCa;
-                    var caLamViec = "";
-                    if(i == 1)
-                    {
-                        caLamViec = "Sáng";
-                    }
-                    else if (i == 2)
-                    {
-                        caLamViec = "Chiều";
-                    }
-                    else
-                    {
-                        caLamViec = "Tối";
-                    }
-                    _dataHeader.ColumnValue = caLamViec;
-                    listHeader2.Add(_dataHeader);
-                }
-            });
-
-            listDataHeader.Add(listHeader2);
-
             #endregion
         }
         private void LayBaoCao4(out List<List<DataRowModel>> listData, out List<List<DataHeaderModel>> listDataHeader, int KyLuongId)
@@ -14382,13 +14420,13 @@ namespace TN.TNM.DataAccess.Databases.DAO
 
                     Decimal soGioDmvs = 0;
                     Decimal soNgayDmvs = 0;
-                    var soPhutDmvs = listDmvs.Where(x => x.EmployeeId == item.EmployeeId).Sum(x => x.ThoiGian);
+                    Decimal soPhutDmvs = listDmvs.Where(x => x.EmployeeId == item.EmployeeId).Sum(x => x.ThoiGian);
                     if(soPhutDmvs != null)
                     {
                         if(soPhutDmvs != 0)
                         {
                             soGioDmvs = soPhutDmvs / 60;
-                            soNgayDmvs = soGioDmvs / 24;
+                            soNgayDmvs = soGioDmvs*125/1000;
                         }
                     }
                     //Số phút dmvs
@@ -15030,6 +15068,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 .Where(x => listSelectedLoaiTroCapKhacId.Contains(x.CategoryId)).ToList();
 
             //Trợ cấp cố định
+            var listTroCap = context.TroCap.ToList();
             var listLuongCtTroCapCoDinh =
                        context.LuongCtTroCapCoDinh.Where(x => x.KyLuongId == KyLuongId).ToList();
 
@@ -15038,6 +15077,9 @@ namespace TN.TNM.DataAccess.Databases.DAO
 
             var loaiTroCapCoDinhType = listAllCateType.FirstOrDefault(x => x.CategoryTypeCode == "LTCCD");
             var listLoaiTroCapCoDinh = listAllCate.Where(x => x.CategoryTypeId == loaiTroCapCoDinhType.CategoryTypeId).ToList();
+
+            //Điều kiện hưởng trọ cấp cố định 
+            var listAllLuongCtDieuKienTroCapCoDinh = context.LuongCtDieuKienTroCapCoDinh.Where(x => x.KyLuongId == KyLuongId).ToList();
 
             //Trợ cấp OT
             var listLuongCtLoaiTroCapOt =
@@ -15049,6 +15091,8 @@ namespace TN.TNM.DataAccess.Databases.DAO
 
             var typeLoaiOt = context.CategoryType.FirstOrDefault(x => x.CategoryTypeCode == "LOAIOT");
             var listLoaiOt = context.Category.Where(x => x.CategoryTypeId == typeLoaiOt.CategoryTypeId).ToList();
+
+            
 
             //Hợp đồng nhần sự
             var listEmp = context.Employee.Where(x => lisempId.Contains(x.EmployeeId)).OrderBy(z => z.EmployeeName).ToList();
@@ -15069,41 +15113,644 @@ namespace TN.TNM.DataAccess.Databases.DAO
             var listAllPosition = context.Position.ToList();
 
             var listAllHDLD = context.HopDongNhanSu.Where(x => lisempId.Contains(x.EmployeeId)).ToList();
+
+            //Kinh phí công đoàn
+            var kinhPhiCongDong = context.KinhPhiCongDoan.FirstOrDefault();
+            //Cấu hình bảo hiểm
+            var cauHinhBaoHiem = context.CauHinhBaoHiem.FirstOrDefault();
+            //Cấu hình giảm trừ
+            var cauHinhGiamTru = context.CauHinhGiamTru.ToList();
             #endregion
 
-            #region Map data
+            #region Thêm cột giá trị của hệ thống
             int stt = 0;
+
+            var listDataRow = new List<DataRowModel>();
+            stt++;
+            //Stt
+            var dataEmpIdRow = new DataRowModel();
+            dataEmpIdRow.ColumnKey = "cot1";
+            dataEmpIdRow.ColumnValue = "";
+            listDataRow.Add(dataEmpIdRow);
+            //Mã nhân viên
+            var dataRow = new DataRowModel();
+            dataRow.ColumnKey = "cot2";
+            dataRow.ColumnValue = "";
+            listDataRow.Add(dataRow);
+            //Mã phòng ban: COS 
+            var dataRow2 = new DataRowModel();
+            dataRow2.ColumnKey = "cot3";
+            dataRow2.ColumnValue = "";
+            listDataRow.Add(dataRow2);
+            //Điểm test
+            var dataRow3 = new DataRowModel();
+            dataRow3.ColumnKey = "cot4";
+            dataRow3.ColumnValue = "";
+            listDataRow.Add(dataRow3);
+            //Trình độ tay nghề
+            var dataRow4 = new DataRowModel();
+            dataRow4.ColumnKey = "cot5";
+            dataRow4.ColumnValue = "";
+            listDataRow.Add(dataRow4);
+            //Mức bảo hiểm loftcare được hưởng
+            var dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot6";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+            //Tên tiếng việt
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot7";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+            //Subcode 2
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot8";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+            //Chức danh
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot9";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+            //Max thưởng
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot10";
+            dataRowAll.ColumnValue = "Day";
+            listDataRow.Add(dataRowAll);
+            //Dự tính thưởng
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot11";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+            //Ngày bắt đầu thử việc
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot12";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+            //Ngày kết thúc thử việc
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot13";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+            //Ngày bắt đầu HDLD
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot14";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+            //Ngày kết thúc HDLD
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot15";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+            //Tổng thời gian làm việc tại cty đến hiện tại
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot16";
+            dataRowAll.ColumnValue = DateTime.Now.ToString("dd/MM/yyyy");
+            listDataRow.Add(dataRowAll);
+            //Tax code
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot17";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+            //Số sổ BHXH
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot18";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+            //Tình trạng hợp đồng
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot19";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+            //Thưởng tuân thủ nội quy lao động theo HĐ
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot20";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+            //Ngày làm việc thực tế
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot21";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+            //Ngày tính lương thử việc
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot22";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+            //Nghỉ phép
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot23";
+            dataRowAll.ColumnValue = "Day";
+            listDataRow.Add(dataRowAll);
+            //NGhỉ lễ. tết
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot24";
+            dataRowAll.ColumnValue = "Day";
+            listDataRow.Add(dataRowAll);
+            //Nghỉ hưởng nguyên lương khác
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot25";
+            dataRowAll.ColumnValue = "Day";
+            listDataRow.Add(dataRowAll);
+            //Nghỉ không lương có xin phép
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot26";
+            dataRowAll.ColumnValue = "Day";
+            listDataRow.Add(dataRowAll);
+            //Nghỉ không phép
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot27";
+            dataRowAll.ColumnValue = "Day";
+            listDataRow.Add(dataRowAll);
+            //Tổng thời gian đi muộn về sớm không được trả lương
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot28";
+            dataRowAll.ColumnValue = "Day";
+            listDataRow.Add(dataRowAll);
+            //Số lần trừ trợ cấp đi muộn về sớm
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot29";
+            dataRowAll.ColumnValue = "WD:";
+            listDataRow.Add(dataRowAll);
+            //Tổng ngày được trả lương bao gồm lễ tết
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot30";
+            dataRowAll.ColumnValue = "20";
+            listDataRow.Add(dataRowAll);
+            //Lương theo HĐ cũ
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot31";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+            //Tỉ lệ tăng
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot32";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+            //Lương theo HĐ mới
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot33";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+
+            //Mức tăng/Mức giảm
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot33x";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+
+            //Các khoản bù trứ tháng trước 
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot34";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+            //Lương thực tế dựa trên ngày làm việc
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot35";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            //OT tính thuế
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot36";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+            //OT không tính thuế
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot37";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+            //Tổng OT
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot38";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            #region Phần cột động trợ cấp cố định
+            index = 0;
+            listLoaiTroCapCoDinh.ForEach(loaiTroCap =>
+            {
+                index++;
+                var dataRowLoaiTroCap = new DataRowModel();
+                dataRowLoaiTroCap.ColumnKey = "index_ctcd" + index;
+                var mucTraCap = listTroCap.FirstOrDefault(x => x.LoaiTroCapId == loaiTroCap.CategoryId);
+                dataRowLoaiTroCap.ColumnValue = mucTraCap != null ? mucTraCap.MucTroCap.ToString() : "";
+                listDataRow.Add(dataRowLoaiTroCap);
+            });
+
+            //Thêm cột tính tổng ở cuối
+            if (index == listLoaiTroCapCoDinh.Count())
+            {
+                var dataRowLoaiTroCap = new DataRowModel();
+                dataRowLoaiTroCap.ColumnKey = "indexCTCDSum_" + index;
+                dataRowLoaiTroCap.ColumnValue = listTroCap.Sum(x => x.MucTroCap).ToString();
+                listDataRow.Add(dataRowLoaiTroCap);
+            }
+
+            #endregion
+
+            #region Phần cột động các khoản trợ cấp tính thuế khác tùy từng tháng
+
+
+            index = 0;
+            listSelectedLoaiTroCapKhac.ForEach(loaiTroCap =>
+            {
+                index++;
+                var dataRowLoaiTroCap = new DataRowModel();
+                dataRowLoaiTroCap.ColumnKey = "index_ctk" + index;
+                dataRowLoaiTroCap.ColumnValue = "VND";
+                listDataRow.Add(dataRowLoaiTroCap);
+            });
+
+            //for (var i = 0; i < 6; i++)
+            //{
+            //    index++;
+            //    var dataRowLoaiTroCap = new DataRowModel();
+            //    dataRowLoaiTroCap.ColumnKey = "index_ctk" + index;
+            //    dataRowLoaiTroCap.ColumnValue = "VND";
+            //    listDataRow.Add(dataRowLoaiTroCap);
+            //}
+
+            //Thêm cột tính tổng ở cuối
+            if (index == listLuongCtTroCapKhac.Count())
+            {
+                index++;
+                var dataRowLoaiTroCap = new DataRowModel();
+                dataRowLoaiTroCap.ColumnKey = "indexCTKSum_" + index;
+                dataRowLoaiTroCap.ColumnValue = "VND";
+                listDataRow.Add(dataRowLoaiTroCap);
+            }
+            #endregion
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot52";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot53";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot54";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot55";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot56";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot57";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot58";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot59";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot60";
+            var giamTruNguoiPhuThuoc = cauHinhGiamTru.FirstOrDefault(x => x.LoaiGiamTruId == 2);
+            dataRowAll.ColumnValue = giamTruNguoiPhuThuoc != null ? giamTruNguoiPhuThuoc.MucGiamTru.ToString() : "";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot61";
+            var giamTruBanThan = cauHinhGiamTru.FirstOrDefault(x => x.LoaiGiamTruId == 1);
+            dataRowAll.ColumnValue = giamTruBanThan != null ? giamTruBanThan.MucGiamTru.ToString() : "";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot62";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot63";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot64";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot65";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot66";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot67";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot68";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot69";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot70";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot71";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot72";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot73";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot74";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot75";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot76";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot77";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot78";
+            dataRowAll.ColumnValue = cauHinhBaoHiem.MucLuongCoSo.ToString();
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot79";
+            dataRowAll.ColumnValue = "14900000";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot80";
+            dataRowAll.ColumnValue = cauHinhBaoHiem.TiLePhanBoMucDongBhtncuaNsdld.ToString();
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot81";
+            dataRowAll.ColumnValue = cauHinhBaoHiem.TiLePhanBoMucDongBhtncuaNld.ToString();
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot82";
+            dataRowAll.ColumnValue = (cauHinhBaoHiem.TiLePhanBoMucDongBhtncuaNsdld + cauHinhBaoHiem.TiLePhanBoMucDongBhtncuaNld).ToString();
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot83";
+            dataRowAll.ColumnValue = cauHinhBaoHiem.TiLePhanBoMucDongBhxhcuaNsdld.ToString();
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot84";
+            dataRowAll.ColumnValue = cauHinhBaoHiem.TiLePhanBoMucDongBhxhcuaNld.ToString();
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot85";
+            dataRowAll.ColumnValue = (cauHinhBaoHiem.TiLePhanBoMucDongBhxhcuaNsdld + cauHinhBaoHiem.TiLePhanBoMucDongBhxhcuaNld).ToString();
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot86";
+            dataRowAll.ColumnValue = cauHinhBaoHiem.TiLePhanBoMucDongBhtnnncuaNsdld.ToString();
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot87";
+            dataRowAll.ColumnValue = cauHinhBaoHiem.TiLePhanBoMucDongBhtnnncuaNld.ToString();
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot88";
+            dataRowAll.ColumnValue = (cauHinhBaoHiem.TiLePhanBoMucDongBhtnnncuaNsdld + cauHinhBaoHiem.TiLePhanBoMucDongBhtnnncuaNld).ToString();
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot89";
+            dataRowAll.ColumnValue = (cauHinhBaoHiem.TiLePhanBoMucDongBhtnnncuaNsdld + cauHinhBaoHiem.TiLePhanBoMucDongBhtnnncuaNld +
+                    cauHinhBaoHiem.TiLePhanBoMucDongBhxhcuaNsdld + cauHinhBaoHiem.TiLePhanBoMucDongBhxhcuaNld).ToString();
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot90";
+            dataRowAll.ColumnValue = cauHinhBaoHiem.TiLePhanBoMucDongBhytcuaNsdld.ToString();
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot91";
+            dataRowAll.ColumnValue = cauHinhBaoHiem.TiLePhanBoMucDongBhytcuaNld.ToString();
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot92";
+            dataRowAll.ColumnValue = (cauHinhBaoHiem.TiLePhanBoMucDongBhytcuaNsdld + cauHinhBaoHiem.TiLePhanBoMucDongBhytcuaNld).ToString();
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot93";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot94";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot95";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot96";
+            dataRowAll.ColumnValue = "21.5%";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot97";
+            dataRowAll.ColumnValue = "10.5%";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot98";
+            dataRowAll.ColumnValue = "32.0%";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot99";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot100";
+            dataRowAll.ColumnValue = kinhPhiCongDong.MucDongCongTy.ToString();
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot101";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot102";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot103";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot104";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot105";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot106";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot107";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot108";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot109";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot110";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot111";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot112";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot113";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot114";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot115";
+            dataRowAll.ColumnValue = "VND";
+            listDataRow.Add(dataRowAll);
+
+
+            dataRowAll = new DataRowModel();
+            dataRowAll.ColumnKey = "cot116";
+            dataRowAll.ColumnValue = "";
+            listDataRow.Add(dataRowAll);
+
+            listDataRoot.Add(listDataRow);
+            #endregion
+
+
+            #region Map data
+            stt = 0;
             listEmp.ForEach(item =>
             {
-                var listDataRow = new List<DataRowModel>();
+                listDataRow = new List<DataRowModel>();
                 stt++;
                 //Stt
-                var dataEmpIdRow = new DataRowModel();
+                dataEmpIdRow = new DataRowModel();
                 dataEmpIdRow.ColumnKey = "cot1";
                 dataEmpIdRow.ColumnValue = stt.ToString();
                 listDataRow.Add(dataEmpIdRow);
                 //Mã nhân viên
-                var dataRow = new DataRowModel();
+                dataRow = new DataRowModel();
                 dataRow.ColumnKey = "cot2";
                 dataRow.ColumnValue = item.EmployeeCode;
                 listDataRow.Add(dataRow);
                 //Mã phòng ban: COS 
-                var dataRow2 = new DataRowModel();
+                dataRow2 = new DataRowModel();
                 dataRow2.ColumnKey = "cot3";
                 dataRow2.ColumnValue = item.SubCode1Value != null ? listSubCode1.FirstOrDefault(x => x.Value == item.SubCode1Value).Name : "";
                 listDataRow.Add(dataRow2);
                 //Điểm test
-                var dataRow3 = new DataRowModel();
+                dataRow3 = new DataRowModel();
                 dataRow3.ColumnKey = "cot4";
                 dataRow3.ColumnValue = item.DiemTest;
                 listDataRow.Add(dataRow3);
                 //Trình độ tay nghề
-                var dataRow4 = new DataRowModel();
+                dataRow4 = new DataRowModel();
                 dataRow4.ColumnKey = "cot5";
                 dataRow4.ColumnValue = item.CapBacId != null ? listKyNang.FirstOrDefault(x => x.CategoryId == item.CapBacId).CategoryName : "";
                 listDataRow.Add(dataRow4);
                 //Mức bảo hiểm loftcare được hưởng
-                var dataRowAll = new DataRowModel();
+                dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot6";
                 var soNamKinhNghiem = GetSoNamKinhNghiemByEmployeeId(listAllHDLD.Where(x => x.EmployeeId == item.EmployeeId).ToList());
                 //Lấy cấu hình bh
@@ -15195,12 +15842,30 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 //Tình trạng hợp đồng
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot19";
-                dataRowAll.ColumnValue = hopDongMoiNhat.Count > 0 ? listHDNS.FirstOrDefault(x => x.CategoryId == hopDongMoiNhat.First().LoaiHopDongId).CategoryName : "";
+                dataRowAll.ColumnValue = hopDongMoiNhat.Count > 0 ? listHDNS.FirstOrDefault(x => x.CategoryId == hopDongMoiNhat.First().LoaiHopDongId).CategoryCode.Replace("Đ","D") : "";
                 listDataRow.Add(dataRowAll);
                 //Thưởng tuân thủ nội quy lao động theo HĐ
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot20";
                 dataRowAll.ColumnValue = "Hỏi lại A Giang";
+
+                var luongTroCTCD_emp = listLuongCtTroCapCoDinh.FirstOrDefault(x => x.EmployeeId == item.EmployeeId);
+                var listLuongCtLoaiTroCapCoDinh_ByEmp = listLuongCtLoaiTroCapCoDinh
+                    .Where(x => x.LuongCtTroCapCoDinhId == luongTroCTCD_emp.LuongCtTroCapCoDinhId).ToList();
+
+                var listLuongCtLoaiTroCapCoDinhId_ByEmp = listLuongCtLoaiTroCapCoDinh_ByEmp.Select(x => x.LuongCtLoaiTroCapCoDinhId).ToList();
+
+                var thuongTuanThuTheoHdLD = listAllCate.FirstOrDefault(x => x.CategoryCode == "DKH001")?.CategoryId;
+
+                var listLuongCtDieuKienTroCapCoDinh = listAllLuongCtDieuKienTroCapCoDinh.FirstOrDefault(x =>
+                            listLuongCtLoaiTroCapCoDinhId_ByEmp.Contains(x.LuongCtLoaiTroCapCoDinhId) && 
+                            x.DieuKienHuongId == thuongTuanThuTheoHdLD);
+                if(listLuongCtDieuKienTroCapCoDinh != null)
+                {
+                    dataRowAll.ColumnValue = listLuongCtDieuKienTroCapCoDinh.DuDieuKien == true ? "YES" : "NO";
+                }
+
+
                 listDataRow.Add(dataRowAll);
                 //Ngày làm việc thực tế
                 var tongHopChamCongEmp = listAllTongHopChamCong.FirstOrDefault(x => x.EmployeeId == item.EmployeeId);
@@ -15336,9 +16001,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
 
                 #region Phần cột động trợ cấp cố định
               
-                var luongTroCTCD_emp = listLuongCtTroCapCoDinh.FirstOrDefault(x => x.EmployeeId == item.EmployeeId);
-                var listLuongCtLoaiTroCapCoDinh_ByEmp = listLuongCtLoaiTroCapCoDinh
-                    .Where(x => x.LuongCtTroCapCoDinhId == luongTroCTCD_emp.LuongCtTroCapCoDinhId).ToList();
+               
 
                 index = 0;
                 listLoaiTroCapCoDinh.ForEach(loaiTroCap =>
@@ -15353,6 +16016,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         var dataRowLoaiTroCap = new DataRowModel();
                         dataRowLoaiTroCap.ColumnKey = "index_ctcd" + index;
                         dataRowLoaiTroCap.ColumnValue = exists.MucTroCap.ToString();
+                        //dataRowLoaiTroCap.ColumnValue = "60,000";
                         listDataRow.Add(dataRowLoaiTroCap);
                   
                     }
@@ -15388,38 +16052,38 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     .Where(x => x.LuongCtTroCapKhacId == luongCTK_Emp.LuongCtTroCapKhacId).ToList();
 
                 index = 0;
-                //listSelectedLoaiTroCapKhac.ForEach(loaiTroCap =>
-                //{
-                //    var exists =
-                //        listLuongCtLoaiTroCapKhac_ByEmp.FirstOrDefault(x => x.LoaiTroCapId == loaiTroCap.CategoryId);
-
-                //    //Nếu nhân viên có dữ liệu của loại trợ cấp này
-                //    if (exists != null)
-                //    {
-                //        index++;
-                //        var dataRowLoaiTroCap = new DataRowModel();
-                //        dataRowLoaiTroCap.ColumnKey = "index_ctk" + index;
-                //        dataRowLoaiTroCap.ColumnValue = exists.MucTroCap.ToString();
-                //        listDataRow.Add(dataRowLoaiTroCap);
-                //    }
-                //    else
-                //    {
-                //        index++;
-                //        var dataRowLoaiTroCap = new DataRowModel();
-                //        dataRowLoaiTroCap.ColumnKey = "index_ctk" + index;
-                //        dataRowLoaiTroCap.ColumnValue = "";
-                //        listDataRow.Add(dataRowLoaiTroCap);
-                //    }
-                //});
-
-                for(var i =0; i < 6; i++)
+                listSelectedLoaiTroCapKhac.ForEach(loaiTroCap =>
                 {
-                    index++;
-                    var dataRowLoaiTroCap = new DataRowModel();
-                    dataRowLoaiTroCap.ColumnKey = "index_ctk" + index;
-                    dataRowLoaiTroCap.ColumnValue = "100";
-                    listDataRow.Add(dataRowLoaiTroCap);
-                }
+                    var exists =
+                        listLuongCtLoaiTroCapKhac_ByEmp.FirstOrDefault(x => x.LoaiTroCapId == loaiTroCap.CategoryId);
+
+                    //Nếu nhân viên có dữ liệu của loại trợ cấp này
+                    if (exists != null)
+                    {
+                        index++;
+                        var dataRowLoaiTroCap = new DataRowModel();
+                        dataRowLoaiTroCap.ColumnKey = "index_ctk" + index;
+                        dataRowLoaiTroCap.ColumnValue = exists.MucTroCap.ToString();
+                        listDataRow.Add(dataRowLoaiTroCap);
+                    }
+                    else
+                    {
+                        index++;
+                        var dataRowLoaiTroCap = new DataRowModel();
+                        dataRowLoaiTroCap.ColumnKey = "index_ctk" + index;
+                        dataRowLoaiTroCap.ColumnValue = "";
+                        listDataRow.Add(dataRowLoaiTroCap);
+                    }
+                });
+
+                //for (var i = 0; i < 6; i++)
+                //{
+                //    index++;
+                //    var dataRowLoaiTroCap = new DataRowModel();
+                //    dataRowLoaiTroCap.ColumnKey = "index_ctk" + index;
+                //    dataRowLoaiTroCap.ColumnValue = "100";
+                //    listDataRow.Add(dataRowLoaiTroCap);
+                //}
 
                 //Thêm cột tính tổng ở cuối
                 if (index == listLuongCtTroCapKhac.Count())
@@ -15430,331 +16094,331 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     dataRowLoaiTroCap.ColumnValue = "Sum CTK";
                     listDataRow.Add(dataRowLoaiTroCap);
                 }
-               
+
 
                 #endregion
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot52";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot53";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot54";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot55";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot56";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot57";
-                dataRowAll.ColumnValue =  "!!";
+                dataRowAll.ColumnValue =  "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot58";
-                dataRowAll.ColumnValue =  "!!";
+                dataRowAll.ColumnValue =  "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot59";
-                dataRowAll.ColumnValue =  "!!";
+                dataRowAll.ColumnValue =  "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot60";
-                dataRowAll.ColumnValue =  "!!";
+                dataRowAll.ColumnValue =  "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot61";
-                dataRowAll.ColumnValue =  "!!";
+                dataRowAll.ColumnValue =  "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot62";
-                dataRowAll.ColumnValue =  "!!";
+                dataRowAll.ColumnValue =  "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot63";
-                dataRowAll.ColumnValue =  "!!";
+                dataRowAll.ColumnValue =  "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot64";
-                dataRowAll.ColumnValue =  "!!";
+                dataRowAll.ColumnValue =  "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot65";
-                dataRowAll.ColumnValue =  "!!";
+                dataRowAll.ColumnValue =  "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot66";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot67";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot68";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot69";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot70";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot71";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot72";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot73";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot74";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot75";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot76";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot77";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot78";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot79";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot80";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot81";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot82";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot83";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot84";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot85";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot86";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot87";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot88";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot89";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot90";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot91";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot92";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot93";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot94";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot95";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot96";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot97";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot98";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot99";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot100";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot101";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot102";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot103";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot104";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot105";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot106";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot107";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot108";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot109";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot110";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot111";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot112";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot113";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot114";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
 
                 dataRowAll = new DataRowModel();
                 dataRowAll.ColumnKey = "cot115";
-                dataRowAll.ColumnValue = "!!";
+                dataRowAll.ColumnValue = "";
                 listDataRow.Add(dataRowAll);
 
 
@@ -15996,23 +16660,24 @@ namespace TN.TNM.DataAccess.Databases.DAO
 
             //Trợ cấp khác
             index = 0;
-            for(var i = 0; i < 6; i++)
-            {
-                index++;
-                var dataRowLoaiTroCap = new DataHeaderModel();
-                dataRowLoaiTroCap.ColumnKey = "index_ctkHeader1" + index;
-                dataRowLoaiTroCap.ColumnValue = "OTHER BONUS";
-                listHeader1.Add(dataRowLoaiTroCap);
-            }
-            //listSelectedLoaiTroCapKhac.ForEach(loaiTroCap =>
+            //for (var i = 0; i < 6; i++)
             //{
             //    index++;
             //    var dataRowLoaiTroCap = new DataHeaderModel();
             //    dataRowLoaiTroCap.ColumnKey = "index_ctkHeader1" + index;
             //    dataRowLoaiTroCap.ColumnValue = "OTHER BONUS";
             //    listHeader1.Add(dataRowLoaiTroCap);
+            //}
 
-            //});
+            listSelectedLoaiTroCapKhac.ForEach(loaiTroCap =>
+            {
+                index++;
+                var dataRowLoaiTroCap = new DataHeaderModel();
+                dataRowLoaiTroCap.ColumnKey = "index_ctkHeader1" + index;
+                dataRowLoaiTroCap.ColumnValue = "OTHER BONUS";
+                listHeader1.Add(dataRowLoaiTroCap);
+            });
+
             //Thêm cột tính tổng ở cuối
             if (index == listLuongCtTroCapKhac.Count())
             {
@@ -16577,30 +17242,30 @@ namespace TN.TNM.DataAccess.Databases.DAO
      
             //Trợ cấp khác
             index = 0;
-            for (var i = 0; i < 6; i++)
-            {
-                index++;
-                var dataRowLoaiTroCap = new DataHeaderModel();
-                dataRowLoaiTroCap.ColumnKey = "index_ctkHeader2" + index;
-                dataRowLoaiTroCap.ColumnValue = "100";
-                listHeader2.Add(dataRowLoaiTroCap);
-            }
-            //listSelectedLoaiTroCapKhac.ForEach(loaiTroCap =>
+            //for (var i = 0; i < 6; i++)
             //{
             //    index++;
             //    var dataRowLoaiTroCap = new DataHeaderModel();
             //    dataRowLoaiTroCap.ColumnKey = "index_ctkHeader2" + index;
-            //    dataRowLoaiTroCap.ColumnValue = loaiTroCap.CategoryName;
+            //    dataRowLoaiTroCap.ColumnValue = "100";
             //    listHeader2.Add(dataRowLoaiTroCap);
+            //}
+            listSelectedLoaiTroCapKhac.ForEach(loaiTroCap =>
+            {
+                index++;
+                var dataRowLoaiTroCap = new DataHeaderModel();
+                dataRowLoaiTroCap.ColumnKey = "index_ctkHeader2" + index;
+                dataRowLoaiTroCap.ColumnValue = loaiTroCap.CategoryName;
+                listHeader2.Add(dataRowLoaiTroCap);
 
-            //});
+            });
             //Thêm cột tính tổng ở cuối
             if (index == listLuongCtTroCapKhac.Count())
             {
                 index++;
                 var dataRowLoaiTroCapSum = new DataHeaderModel();
                 dataRowLoaiTroCapSum.ColumnKey = "indexCTKSumHeader2_" + index;
-                dataRowLoaiTroCapSum.ColumnValue = "Sum CTK";
+                dataRowLoaiTroCapSum.ColumnValue = "TOTAL BONUS";
                 listHeader2.Add(dataRowLoaiTroCapSum);
             }
 
@@ -16994,6 +17659,107 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 data = tax.ToString();
             }
         }
+        private void TongKetBaoCaoTongHopOT(out List<DataRowModel> listDataRowTK, List<DateTime> listDate, List<ChamCongOt> listChamCongOt, Guid loaiOtId, string text, string otCode, List<Category> listLoaiOt)
+        {
+            listDataRowTK = new List<DataRowModel>();
+
+            var dataRowTK = new DataRowModel();
+            dataRowTK.ColumnKey = "stt";
+            dataRowTK.ColumnValue = GetLoaiOTCode(otCode) + ": " + text;
+            listDataRowTK.Add(dataRowTK);
+
+            var dataRow2TK = new DataRowModel();
+            dataRow2TK.ColumnKey = "code";
+            dataRow2TK.ColumnValue = "";
+            listDataRowTK.Add(dataRow2TK);
+
+            var dataRow3TK = new DataRowModel();
+            dataRow3TK.ColumnKey = "name";
+            dataRow3TK.ColumnValue = "";
+            listDataRowTK.Add(dataRow3TK);
+
+            var dataRowNgayBatDauTK = new DataRowModel();
+            dataRowNgayBatDauTK.ColumnKey = "codeMayChamCong";
+            dataRowNgayBatDauTK.ColumnValue = "";
+            listDataRowTK.Add(dataRowNgayBatDauTK);
+
+            int indexTK = 0;
+            var listDataRowTkDate = new List<DataRowModel>();
+            listDate.ForEach(data =>
+            {
+                var chamCongLoop = listChamCongOt.Where(x => x.NgayChamCong.Date == data.Date).ToList();
+                indexTK++;
+                var _vaoSang = new DataRowModel();
+                _vaoSang.ColumnKey = "index_" + indexTK;
+                _vaoSang.ColumnValue = chamCongLoop.Where(x => x.LoaiOtId == loaiOtId).Count().ToString();
+                listDataRowTkDate.Add(_vaoSang);
+            });
+
+            listLoaiOt.ForEach(loaiOT =>
+            {
+                if(loaiOT.CategoryId == loaiOtId)
+                {
+                    var dataRow5x = new DataRowModel();
+                    dataRow5x.ColumnKey = loaiOT.CategoryCode;
+                    dataRow5x.ColumnValue = listChamCongOt.Where(x => x.LoaiOtId == loaiOtId).Count().ToString();
+                    listDataRowTkDate.Add(dataRow5x);
+                }
+                else
+                {
+                    var dataRow5x = new DataRowModel();
+                    dataRow5x.ColumnKey = loaiOT.CategoryCode;
+                    dataRow5x.ColumnValue = "0";
+                    listDataRowTkDate.Add(dataRow5x);
+                }
+            });
+
+            listDataRowTK.AddRange(listDataRowTkDate);
+
+            var dataRow4TK = new DataRowModel();
+            dataRow4TK.ColumnKey = "ngayLamViecThucTe";
+            dataRow4TK.ColumnValue = "";
+            listDataRowTK.Add(dataRow4TK);
+
+            var dataRow5TK = new DataRowModel();
+            dataRow5TK.ColumnKey = "congTac";
+            dataRow5TK.ColumnValue = "";
+            listDataRowTK.Add(dataRow5TK);
+        }
+
+        private string GetLoaiOTCode(string loaiOtCode)
+        {
+            string result = "--";
+            if(loaiOtCode == "OTNGAYLE")
+            {
+                result = "C1";
+            }
+            else if (loaiOtCode == "CTUAN")
+            {
+                result = "C2";
+            }
+            else if (loaiOtCode == "TTUAN")
+            {
+                result = "C3";
+            }
+            else if (loaiOtCode == "OTDEM_HLD")
+            {
+                result = "C4";
+            }
+            else if (loaiOtCode == "OTDEM_WK")
+            {
+                result = "C5";
+            }
+            else if (loaiOtCode == "OTDEM_ND")
+            {
+                result = "C6";
+            }
+            else if (loaiOtCode == "OTDEM_NMW")
+            {
+                result = "C7";
+            }
+            return result;
+        }
+
     }
 }
 
