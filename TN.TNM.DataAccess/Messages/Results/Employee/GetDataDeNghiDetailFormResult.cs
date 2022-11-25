@@ -14,6 +14,7 @@ namespace TN.TNM.DataAccess.Messages.Results.Employee
         public DeNghiTamHoanUngEntityModel DeNghiTamHoanUng { get; set; }
         public List<FileInFolderEntityModel> ListFileInFolder { get; set; }
         public List<DeNghiTamHoanUngChiTiet> ListNoiDungTT { get; set; }
+        public DeXuatCongTac HoSoCongTac { get; set; }
         public bool IsShowGuiPheDuyet { get; set; }
         public bool IsShowPheDuyet { get; set; }
         public bool IsShowTuChoi { get; set; }

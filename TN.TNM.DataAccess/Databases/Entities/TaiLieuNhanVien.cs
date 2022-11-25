@@ -17,5 +17,6 @@ namespace TN.TNM.DataAccess.Databases.Entities
         public DateTime? UpdatedDate { get; set; }
         public Guid? TenantId { get; set; }
         public int? CauHinhChecklistId { get; set; }
+        public bool IsDaNop { get; set; }
     }
 }

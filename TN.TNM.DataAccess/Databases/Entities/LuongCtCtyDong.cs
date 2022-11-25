@@ -19,5 +19,6 @@ namespace TN.TNM.DataAccess.Databases.Entities
         public decimal Other { get; set; }
         public decimal FundOct { get; set; }
         public Guid? TenantId { get; set; }
+        public decimal BaseBhtn { get; set; }
     }
 }

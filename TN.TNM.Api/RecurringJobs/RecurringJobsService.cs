@@ -283,9 +283,9 @@ namespace TN.TNM.Api.RecurringJobs
 
                 var categoryType = _context.CategoryType.FirstOrDefault(x => x.CategoryTypeCode == "LHDNS")?.CategoryTypeId;
 
-                var loaiHopDong1T = _context.Category.FirstOrDefault(x => x.CategoryTypeId == categoryType && x.CategoryCode == "HĐĐT1")?.CategoryId;
-                var loaiHopDong2T = _context.Category.FirstOrDefault(x => x.CategoryTypeId == categoryType && x.CategoryCode == "HĐĐT2")?.CategoryId;
-                var loaiHopDong = _context.Category.FirstOrDefault(x => x.CategoryTypeId == categoryType && x.CategoryId != loaiHopDong1T && x.CategoryId != loaiHopDong2T)?.CategoryId;
+                var loaiHopDong1T = _context.Category.FirstOrDefault(x => x.CategoryTypeId == categoryType && x.CategoryCode == "HĐTV1")?.CategoryId;
+                var loaiHopDong2T = _context.Category.FirstOrDefault(x => x.CategoryTypeId == categoryType && x.CategoryCode == "HĐTV2")?.CategoryId;
+                //var loaiHopDong = _context.Category.FirstOrDefault(x => x.CategoryTypeId == categoryType && x.CategoryId != loaiHopDong1T && x.CategoryId != loaiHopDong2T)?.CategoryId;
 
                 var listHD1TId = new List<int>();//list id hợp đồng thử việc 1 tháng sắp hết hạn
                 var listHD2TId = new List<int>();//list id hợp đồng thử việc 2 tháng sắp hết hạn 
@@ -321,7 +321,6 @@ namespace TN.TNM.Api.RecurringJobs
                             listHDId.Add(item.HopDongNhanSuId);
                         }
                     }
-
                 });
 
                 //list nhân viên sắp hết hạn thử việc 1 tháng
@@ -349,7 +348,6 @@ namespace TN.TNM.Api.RecurringJobs
                 }
 
                 _context.SaveChanges();
-
             }
         }
 

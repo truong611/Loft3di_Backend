@@ -13,5 +13,6 @@ namespace TN.TNM.DataAccess.Messages.Results.Employee
         public List<CategoryEntityModel> ListLoaiHopDong { get; set; }
         public List<Position> ListChucVu { get; set; }
         public List<string> ListEmployeeCode { get; set; }
+        public List<CategoryEntityModel> ListQuanHe { get; set; }
     }
 }

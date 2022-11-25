@@ -11,5 +11,6 @@ namespace TN.TNM.DataAccess.Databases.Entities
         public Guid? ObjectId { get; set; }
         public Guid OrganizationId { get; set; }
         public Guid? TenantId { get; set; }
+        public bool IsPheDuyetCapTren { get; set; }
     }
 }

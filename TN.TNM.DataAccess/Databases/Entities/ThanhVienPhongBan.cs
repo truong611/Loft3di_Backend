@@ -10,5 +10,6 @@ namespace TN.TNM.DataAccess.Databases.Entities
         public Guid OrganizationId { get; set; }
         public int IsManager { get; set; }
         public Guid? TenantId { get; set; }
+        public bool IsPhongBanChinh { get; set; }
     }
 }

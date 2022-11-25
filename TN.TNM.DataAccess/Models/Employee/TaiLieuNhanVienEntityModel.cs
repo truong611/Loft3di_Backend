@@ -14,6 +14,7 @@ namespace TN.TNM.DataAccess.Models.Employee
         public DateTime? NgayHen { get; set; }
         public DateTime? CreatedDate { get; set; }
         public int? CauHinhChecklistId { get; set; }
+        public bool IsDaNop { get; set; }
 
         public TaiLieuNhanVienEntityModel()
         {

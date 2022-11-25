@@ -5,6 +5,8 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Mail;
+using System.Net.Mime;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -35,20 +37,24 @@ using TN.TNM.DataAccess.Messages.Parameters.QuyTrinh;
 using TN.TNM.DataAccess.Messages.Results.Asset;
 using TN.TNM.Common.NotificationSetting;
 using KellermanSoftware.CompareNetObjects;
+using Microsoft.EntityFrameworkCore.Internal;
 using TN.TNM.DataAccess.Models.Salary;
 using TN.TNM.DataAccess.ConstType.Note;
+using TN.TNM.DataAccess.Messages.Results;
 
 namespace TN.TNM.DataAccess.Databases.DAO
 {
     public class EmployeeDAO : BaseDAO, IEmployeeDataAccess
     {
         private readonly IHostingEnvironment hostingEnvironment;
+        private readonly IQuyTrinhDataAccess iQuyTrinhDataAccess;
 
-        public EmployeeDAO(Databases.TNTN8Context _content, IAuditTraceDataAccess _iAuditTrace, IHostingEnvironment _hostingEnvironment)
+        public EmployeeDAO(Databases.TNTN8Context _content, IAuditTraceDataAccess _iAuditTrace, IHostingEnvironment _hostingEnvironment, IQuyTrinhDataAccess _iQuyTrinhDataAccess)
         {
             this.context = _content;
             this.iAuditTrace = _iAuditTrace;
             this.hostingEnvironment = _hostingEnvironment;
+            this.iQuyTrinhDataAccess = _iQuyTrinhDataAccess;
         }
 
         public CreateEmployeeResult CreateEmployee(CreateEmployeeParameter parameter)
@@ -2153,7 +2159,8 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 }
 
                 //Phòng ban
-                var organizationId = context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == employee.EmployeeId)
+                var organizationId = context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == employee.EmployeeId &&
+                                                                                   x.IsPhongBanChinh == true)
                     ?.OrganizationId;
                 var organization = context.Organization.FirstOrDefault(x => x.OrganizationId == organizationId);
 
@@ -2485,36 +2492,49 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 employee.ViTriLamViec = parameter.ThongTinChungThanhVien.ViTriLamViec;
                 employee.IsNhanSu = parameter.ThongTinChungThanhVien.IsNhanSu;
                 employee.NgayNghiViec = parameter.ThongTinChungThanhVien.NgayNghiViec;
-                employee.EmployeeName = parameter.ThongTinChungThanhVien.FirstName + " " + parameter.ThongTinChungThanhVien.LastName;
+                employee.EmployeeName = parameter.ThongTinChungThanhVien.FirstName + " " +
+                                        parameter.ThongTinChungThanhVien.LastName;
                 employee.SoNgayDaNghiPhep = parameter.ThongTinChungThanhVien.SoNgayDaNghiPhep;
                 employee.SoNgayPhepConLai = parameter.ThongTinChungThanhVien.SoNgayPhepConLai;
 
                 #region Các phòng ban mà nhân viên trực thuộc
 
-                var listThanhVienPhongBan = new List<ThanhVienPhongBan>();
+                //Xóa phòng ban chính hiện tại
+                var organizationOld = context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == employee.EmployeeId &&
+                                                                                    x.IsPhongBanChinh == true);
+                
+                if (organizationOld != null)
+                {
+                    context.ThanhVienPhongBan.Remove(organizationOld);
+                }
 
-                //Xóa phòng ban hiện tại
-                var listOrganizationOld = context.ThanhVienPhongBan.Where(x => x.EmployeeId == employee.EmployeeId);
-                var orgRole = listOrganizationOld.First();
-                context.ThanhVienPhongBan.RemoveRange(listOrganizationOld);
+                //Kiểm tra phòng ban mới đã có trong list phòng ban của nhân viên chưa?
+                var existsPhongBan = context.ThanhVienPhongBan.FirstOrDefault(x =>
+                    x.EmployeeId == employee.EmployeeId &&
+                    x.OrganizationId == parameter.ListPhongBanId.First());
 
-                parameter.ListPhongBanId.ForEach(item =>
+                //Nếu đã có thì
+                if (existsPhongBan != null)
+                {
+                    //Chuyển phòng ban đó sang phòng ban chính
+                    existsPhongBan.IsPhongBanChinh = true;
+                    context.ThanhVienPhongBan.Update(existsPhongBan);
+                    context.Update(existsPhongBan);
+                }
+                //Thêm lại phòng ban chính
+                else
                 {
                     var thanhVienPhongBan = new ThanhVienPhongBan();
                     thanhVienPhongBan.Id = Guid.NewGuid();
                     thanhVienPhongBan.EmployeeId = employee.EmployeeId;
-                    thanhVienPhongBan.OrganizationId = item;
-                    thanhVienPhongBan.IsManager = orgRole.IsManager;
+                    thanhVienPhongBan.OrganizationId = parameter.ListPhongBanId.First();
+                    thanhVienPhongBan.IsManager = organizationOld?.IsManager ?? 0;
+                    thanhVienPhongBan.IsPhongBanChinh = true;
 
-                    listThanhVienPhongBan.Add(thanhVienPhongBan);
-                });
-
-                context.ThanhVienPhongBan.AddRange(listThanhVienPhongBan);
-
-                if (listThanhVienPhongBan.Count > 0)
-                {
-                    employee.OrganizationId = listThanhVienPhongBan[0].OrganizationId;
+                    context.ThanhVienPhongBan.Add(thanhVienPhongBan);
                 }
+
+                employee.OrganizationId = parameter.ListPhongBanId.First();
 
                 #endregion
 
@@ -2555,7 +2575,8 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 //Lưu ghi chú thay đổi trạng thái employee
                 if (parameter.ThongTinChungThanhVien.TrangThaiId != trangThaiId)
                 {
-                    contentNote += "<p>- <strong>" + userUpdate.UserName + "</strong> đã thay đổi Trạng thái từ " + trangThaiText + " sang " + newTrangThaiText + "<p>";
+                    contentNote += "<p>- <strong>" + userUpdate.UserName + "</strong> đã thay đổi Trạng thái từ " +
+                                   trangThaiText + " sang " + newTrangThaiText + "<p>";
                 }
 
                 context.Employee.Update(employee);
@@ -2790,7 +2811,8 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         Id = y.Id,
                         EmployeeId = y.EmployeeId,
                         OrganizationId = y.OrganizationId,
-                        IsManager = y.IsManager
+                        IsManager = y.IsManager,
+                        IsPhongBanChinh = y.IsPhongBanChinh
                     }).ToList();
 
                 listSelectedDonVi.ForEach(item =>
@@ -2871,6 +2893,17 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 //Phòng ban
                 if (parameter.ListThanhVienPhongBan?.Count > 0)
                 {
+                    var countPhongBanChinh = parameter.ListThanhVienPhongBan.Count(x => x.IsPhongBanChinh == true);
+
+                    if (countPhongBanChinh != 1)
+                    {
+                        return new SaveCauHinhPhanQuyenResult()
+                        {
+                            MessageCode = "Nhân viên phải thuộc một phòng ban chính",
+                            StatusCode = System.Net.HttpStatusCode.ExpectationFailed,
+                        };
+                    }
+
                     var listOld = context.ThanhVienPhongBan.Where(x => x.EmployeeId == employee.EmployeeId).ToList();
                     context.ThanhVienPhongBan.RemoveRange(listOld);
 
@@ -2882,16 +2915,16 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         newItem.EmployeeId = employee.EmployeeId;
                         newItem.OrganizationId = item.OrganizationId.Value;
                         newItem.IsManager = item.IsManager;
+                        newItem.IsPhongBanChinh = item.IsPhongBanChinh;
 
                         listNew.Add(newItem);
                     });
 
                     context.ThanhVienPhongBan.AddRange(listNew);
 
-                    if (listNew.Count > 0)
-                    {
-                        employee.OrganizationId = listNew[0].OrganizationId;
-                    }
+                    var phongBanChinh = parameter.ListThanhVienPhongBan.FirstOrDefault(x => x.IsPhongBanChinh == true);
+                    employee.OrganizationId = phongBanChinh.OrganizationId;
+                    context.Employee.Update(employee);
                 }
                 else
                 {
@@ -4274,7 +4307,6 @@ namespace TN.TNM.DataAccess.Databases.DAO
                                 PositionId = y.Dxnv.ChucVuDeXuatId
                             }).ToList();
 
-                    //listData.Add(dataHopDong);
                     listData.AddRange(listHopDongNhanSu);
                     listData.AddRange(listDeXuatChucVu);
 
@@ -4289,7 +4321,8 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         employee.PositionId = null;
                         context.Employee.Update(employee);
                     }
-                } else
+                } 
+                else
                 {
                         employee.PositionId = null;
                         context.Employee.Update(employee);
@@ -4989,7 +5022,8 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         TenTaiLieu = item.TenTaiLieu,
                         NgayNop = taiLieu?.NgayNop,
                         NgayHen = taiLieu?.NgayHen,
-                        CauHinhChecklistId = item.CauHinhChecklistId
+                        CauHinhChecklistId = item.CauHinhChecklistId,
+                        IsDaNop = taiLieu?.IsDaNop ?? false
                     };
                     listTaiLieu.Add(taiLieuNhanVien);
                 });
@@ -5066,7 +5100,9 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     IsShowButtonThemMoi = isShowButtonThemMoi,
                     IsShowButtonSua = isShowButtonSua,
                     IsShowButtonXoa = isShowButtonXoa,
-                    ListTaiLieu = listTaiLieu
+                    ListTaiLieu = listTaiLieu,
+                    NgayNop = emp.NgayNop,
+                    NgayHenNop = emp.NgayHenNop
                 };
             }
             catch (Exception e)
@@ -5193,6 +5229,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     context.Note.Add(note);
                 }
                 #endregion
+
                 context.SaveChanges();
 
                 return new TuChoiCheckListTaiLieuResult()
@@ -5291,8 +5328,8 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     context.Note.Add(note);
                 }
                 #endregion
-                context.SaveChanges();
 
+                context.SaveChanges();
 
                 return new XacNhanCheckListTaiLieuResult()
                 {
@@ -5312,9 +5349,11 @@ namespace TN.TNM.DataAccess.Databases.DAO
 
         public YeuCauXacNhanCheckListTaiLieuResult YeuCauXacNhanCheckListTaiLieu(YeuCauXacNhanCheckListTaiLieuParameter parameter)
         {
+            var emp = context.Employee.FirstOrDefault(x => x.EmployeeId == parameter.EmployeeId);
+            var listTaiLieuId = new List<int?>();
+
             try
             {
-                var emp = context.Employee.FirstOrDefault(x => x.EmployeeId == parameter.EmployeeId);
                 if (emp == null)
                 {
                     return new YeuCauXacNhanCheckListTaiLieuResult()
@@ -5333,17 +5372,24 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     };
                 }
 
+                listTaiLieuId = context.TaiLieuNhanVien.Where(x => x.EmployeeId == emp.EmployeeId &&
+                                                                       x.IsDaNop == true)
+                    .Select(y => y.CauHinhChecklistId).ToList();
+
+                if (listTaiLieuId.Count == 0)
+                {
+                    return new YeuCauXacNhanCheckListTaiLieuResult()
+                    {
+                        MessageCode = "Nhân viên chưa có tài liệu được đánh dấu đã nộp",
+                        StatusCode = HttpStatusCode.NotFound,
+                    };
+                }
+
                 emp.IsXacNhanTaiLieu = false;
                 context.Employee.Update(emp);
-                context.SaveChanges();
-
-                #region Gửi email đến nhân viên
-
-
-
-                #endregion
 
                 #region Thêm ghi chú
+
                 var userUpdate = context.User.FirstOrDefault(x => x.UserId == parameter.UserId);
                 var contentNote = "";
                 contentNote += "<p>Nhân viên <strong>" + userUpdate.UserName + "</strong> đã gửi yêu cầu xác nhận" + "<p>";
@@ -5364,14 +5410,10 @@ namespace TN.TNM.DataAccess.Databases.DAO
 
                     context.Note.Add(note);
                 }
-                #endregion
-                context.SaveChanges();
 
-                return new YeuCauXacNhanCheckListTaiLieuResult()
-                {
-                    MessageCode = "Gửi yêu cầu thành công",
-                    StatusCode = HttpStatusCode.OK,
-                };
+                #endregion
+
+                context.SaveChanges();
             }
             catch (Exception e)
             {
@@ -5381,6 +5423,52 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     StatusCode = HttpStatusCode.ExpectationFailed,
                 };
             }
+
+            var listEmailSendTo = new List<string>();
+
+            var _contact =
+                context.Contact.FirstOrDefault(x => x.ObjectId == emp.EmployeeId && x.ObjectType == "EMP");
+
+            //Nếu có mail cty thì k gửi mail cá nhân
+            if (!string.IsNullOrEmpty(_contact.WorkEmail))
+            {
+                listEmailSendTo.Add(_contact.WorkEmail.Trim());
+            }
+            else
+            {
+                if (!string.IsNullOrEmpty(_contact.Email)) listEmailSendTo.Add(_contact.Email.Trim());
+            }
+
+            listEmailSendTo = listEmailSendTo.Distinct().ToList();
+
+            var listTaiLieu = context.CauHinhChecklist.Where(x => listTaiLieuId.Contains(x.CauHinhChecklistId))
+                .Select(y => y.TenTaiLieu).ToArray().Join(", ");
+
+            var Domain = context.SystemParameter.FirstOrDefault(w => w.SystemKey == "Domain").SystemValueString;
+
+            var isHttp = context.SystemParameter.FirstOrDefault(w => w.SystemKey == "IsHttp").SystemValue;
+
+            var link = (isHttp == true ? "http://" : "https://") + Domain + @"/employee/detail;employeeId=" + emp.EmployeeId;
+
+            string content = "<p>Kính gửi: " + emp.EmployeeName + "</p>" +
+                "<p>Phòng HCNS đã nhận được danh sách hồ sơ của nhân viên " +
+                emp.EmployeeCode + " - " + emp.EmployeeName + " " +
+                " gồm: " + listTaiLieu + "</p>" +
+                "<p>Anh/Chị vui lòng nhấn vào đường link bên dưới để xác nhận thông tin</p>" + 
+                "<p><a href=" + link + ">Link</a></p>";
+
+            var fromEmail = context.SystemParameter.FirstOrDefault(x => x.SystemKey == "Email");
+            if (!string.IsNullOrEmpty(fromEmail.SystemValueString) && listEmailSendTo.Count > 0)
+            {
+                var emailResult = Emailer.SendEmail(context, fromEmail.SystemValueString, listEmailSendTo,
+                    null, null, "Yêu cầu xác nhận nộp hồ sơ", content);
+            }
+
+            return new YeuCauXacNhanCheckListTaiLieuResult()
+            {
+                MessageCode = "Gửi yêu cầu thành công",
+                StatusCode = HttpStatusCode.OK,
+            };
         }
 
         public DeleteTaiLieuNhanVienByIdResult DeleteTaiLieuNhanVienById(DeleteTaiLieuNhanVienByIdParameter parameter)
@@ -13513,7 +13601,8 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     listEmp = GetAllEmpHoatDong(listEmp, listAllUser);
                     var employeeId = user.EmployeeId;
                     var employeeLogin = listEmp.FirstOrDefault(x => x.EmployeeId == employeeId);
-                    var isManager = employeeLogin.IsManager;
+                    var isManager = context.ThanhVienPhongBan
+                                        .FirstOrDefault(x => x.EmployeeId == employeeLogin.EmployeeId).IsManager == 1;
 
                     if (isManager == true)
                     {
@@ -14422,34 +14511,27 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 #endregion
 
                 //Lấy quy trình phê duyệt của đề xuất kê hoạch OT
-                var quyTrinhDangKyOT = context.QuyTrinh.FirstOrDefault(x => x.HoatDong && x.DoiTuongApDung == 12);
+                var quyTrinhDangKyOT = context.QuyTrinh.FirstOrDefault(x => x.HoatDong && x.DoiTuongApDung == 13);
                 if (quyTrinhDangKyOT == null)
                 {
                     return new GetMasterSearchKeHoachOtResult()
                     {
                         StatusCode = HttpStatusCode.ExpectationFailed,
-                        Message = "Chưa có quy trình phê duyệt kê hoạch OT"
+                        Message = "Chưa có quy trình phê duyệt đăng ký OT"
                     };
                 }
-                //Chọn cấu hình quy trình
-                var cauHinhQuyTrinhDangKyOT = context.CauHinhQuyTrinh.Where(x => x.QuyTrinhId == quyTrinhDangKyOT.Id).OrderByDescending(z => z.SoTienTu).First();
 
-                if (cauHinhQuyTrinhDangKyOT == null)
+                var cauHinhQuyTrinhDangKyOT_QuanLy = context.CauHinhQuyTrinh
+                    .Where(x => x.QuyTrinhId == quyTrinhDangKyOT.Id && x.LoaiCauHinh == 2).FirstOrDefault();
+                var cauHinhQuyTrinhDangKyOT_NhanVien = context.CauHinhQuyTrinh
+                    .Where(x => x.QuyTrinhId == quyTrinhDangKyOT.Id && x.LoaiCauHinh == 1).FirstOrDefault();
+
+                if (cauHinhQuyTrinhDangKyOT_QuanLy == null || cauHinhQuyTrinhDangKyOT_NhanVien == null)
                 {
                     return new GetMasterSearchKeHoachOtResult()
                     {
-                        StatusCode = HttpStatusCode.ExpectationFailed,
-                        Message = "Quy trình chưa có cấu hình quy trình phê duyệt"
-                    };
-                }
-                var buoc1 = context.CacBuocQuyTrinh.FirstOrDefault(x =>
-                            x.CauHinhQuyTrinhId == cauHinhQuyTrinhDangKyOT.Id && x.Stt == 1);
-                if (buoc1 == null)
-                {
-                    return new GetMasterSearchKeHoachOtResult()
-                    {
-                        StatusCode = HttpStatusCode.ExpectationFailed,
-                        Message = "Quy trình không tồn tại bước 1"
+                        StatusCode = System.Net.HttpStatusCode.ExpectationFailed,
+                        MessageCode = "Chưa có cấu hình Đề xuất"
                     };
                 }
 
@@ -14457,33 +14539,17 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 var _listKeHoachOtId = listKeHoachOT.Select(y => y.KeHoachOtId).ToList();
                 var listKeHoachOtPhongBan = context.KeHoachOtPhongBan
                     .Where(x => _listKeHoachOtId.Contains(x.KeHoachOtId)).ToList();
-                var listCacBuocApDung = context.CacBuocApDung.Where(x => x.DoiTuongApDung == 13).ToList();
-                var listNewCacBuocApDung = new List<CacBuocApDung>();
-                var listNewNote = new List<Note>();
 
-                using (var trans = context.Database.BeginTransaction())
+                for (int i = 0; i < listKeHoachOT.Count; i++)
                 {
-                    for (int i = 0; i < listKeHoachOT.Count; i++)
-                    {
-                        var keHoachOtCheck = listKeHoachOT[i];
-                        bool isContinue = false;
-                        var _listNewCacBuocApDung = new List<CacBuocApDung>();
-                        var _listNewNote = new List<Note>();
+                    var keHoachOtCheck = listKeHoachOT[i];
+                    bool isContinue = false;
+                    var _listNewCacBuocApDung = new List<CacBuocApDung>();
+                    var _listNewNote = new List<Note>();
 
-                        UpdateTrangThaiKeHoachOt(keHoachOtCheck, listKeHoachOtPhongBan, listCacBuocApDung,
-                            quyTrinhDangKyOT, cauHinhQuyTrinhDangKyOT, buoc1, parameter.UserId,
-                            out isContinue, out _listNewCacBuocApDung, out _listNewNote);
+                    UpdateTrangThaiKeHoachOt(keHoachOtCheck, listKeHoachOtPhongBan, out isContinue);
 
-                        listCacBuocApDung.AddRange(_listNewCacBuocApDung);
-                        listNewNote.AddRange(_listNewNote);
-                        if (isContinue) continue;
-                    }
-
-                    context.CacBuocApDung.AddRange(listNewCacBuocApDung);
-                    context.Note.AddRange(listNewNote);
-                    context.SaveChanges();
-
-                    trans.Commit();
+                    if (isContinue) continue;
                 }
 
                 //Lấy dsach tên các loại OT code: LOAIOT
@@ -14501,7 +14567,8 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 var employeeLogin = listEmp.FirstOrDefault(x => x.EmployeeId == employeeId);
 
                 //Nếu phong ban có quyền xem dữ liệu các phòng khác
-                var isAccess = context.Organization.FirstOrDefault(x => x.OrganizationId == employeeLogin.OrganizationId)?.IsAccess;
+                var isAccess = context.Organization
+                    .FirstOrDefault(x => x.OrganizationId == employeeLogin.OrganizationId)?.IsAccess;
 
                 // ds kế hoạch Ot
                 var ListKeHoachOt = context.KeHoachOt
@@ -14531,56 +14598,59 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         LoaiOTName = listLoaiOt.FirstOrDefault(y => y.CategoryId == x.LoaiOtId).CategoryName,
                     }).OrderByDescending(x => x.CreatedDate).ToList();
 
+                var listData = new List<KeHoachOtEntityModel>();
+
                 if (isAccess != true)
                 {
-                    var thanhVienPhongBan = context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == user.EmployeeId);
-                    //Nếu là trưởng bộ phận (IsManager = 1)
-                 
-                    //Lấy ra list đối tượng id mà người dùng phụ trách phê duyệt
-                    var listId = context.PhongBanPheDuyetDoiTuong
-                        .Where(x => (x.DoiTuongApDung == 12 || x.DoiTuongApDung == 13) &&
-                                    x.OrganizationId == thanhVienPhongBan.OrganizationId).Select(y => y.ObjectNumber)
-                        .ToList();
-                    
+                    var listThanhVienPhongBan =
+                        context.ThanhVienPhongBan.Where(x => x.EmployeeId == user.EmployeeId).ToList();
 
-                    //Nếu là quản lý
-                    if (thanhVienPhongBan.IsManager == 1)
+                    //Các kế hoạch OT mà phòng ban của người đăng nhập được tham gia và có trạng thái khác Mới
+                    var listKehoachtOtIdPhongBanThamGia = context.KeHoachOtPhongBan
+                        .Where(x => x.OrganizationId == employeeLogin.OrganizationId.Value)
+                        .Select(x => x.KeHoachOtId).Distinct().ToList();
+
+                    var _ListKeHoachOt = ListKeHoachOt.Where(x =>
+                        x.NguoiDeXuatId == employeeLogin.EmployeeId ||
+                        (listKehoachtOtIdPhongBanThamGia.Contains(x.KeHoachOtId.Value) && x.TrangThai != 1)
+                    ).ToList();
+
+                    listData.AddRange(_ListKeHoachOt);
+
+                    //list thành viên cùng phòng ban 
+                    var listEmpIdOrg = listEmp.Where(x => x.OrganizationId == employeeLogin.OrganizationId)
+                        .Select(x => x.EmployeeId).ToList();
+
+                    listThanhVienPhongBan.ForEach(item =>
                     {
-                        //list thành viên cùng phòng ban 
-                        var listEmpIdOrg = listEmp.Where(x => x.OrganizationId == employeeLogin.OrganizationId).Select(x => x.EmployeeId).ToList();
+                        //Nếu là trưởng bộ phận
+                        if (item.IsManager == 1)
+                        {
+                            //Lấy ra list đối tượng id mà người dùng phụ trách phê duyệt
+                            var listId = context.PhongBanPheDuyetDoiTuong
+                                .Where(x => (x.DoiTuongApDung == 12 || x.DoiTuongApDung == 13) &&
+                                            x.OrganizationId == item.OrganizationId).Select(y => y.ObjectNumber)
+                                .ToList();
 
-                        //Các kế hoạch OT mà phòng ban của người đăng nhập được tham gia
-                        var listKehoachtOtIdPhongBanThamGia = context.KeHoachOtPhongBan.Where(x => x.OrganizationId == employeeLogin.OrganizationId.Value)
-                                .Select(x => x.KeHoachOtId).Distinct().ToList();
+                            //Lọc ra các Id các bản ghi đã được lấy ở trên
+                            var listIgnoreId = listData.Select(y => y.KeHoachOtId).ToList();
 
-                        ListKeHoachOt = ListKeHoachOt.Where(x => 
+                            var ListKeHoachOt_CanPheDuyet = ListKeHoachOt.Where(x =>
+                                (listIgnoreId.Count == 0 || !listIgnoreId.Contains(x.KeHoachOtId)) &&
+                                (listEmpIdOrg.Contains(x.NguoiDeXuatId.Value) //Cùng phòng ban  
+                                 || listId.Contains(x.KeHoachOtId))  //Các kế hoạch cần phê duyệt
+                                && x.TrangThai != 1).ToList(); //Trạng thái khác 1: mới 
 
-                            x.NguoiDeXuatId == user.EmployeeId  || //Người đăng nhập tạo
+                            listData.AddRange(ListKeHoachOt_CanPheDuyet);
 
-                            (listEmpIdOrg.Contains(x.NguoiDeXuatId.Value) && x.TrangThai != 1) || // cùng phòng ban và trạng thái khác 1: mới  
-
-                            listId.Contains(x.KeHoachOtId) ||  //Các kế hoạch cần phê duyệt
-
-                            (listKehoachtOtIdPhongBanThamGia.Contains(x.KeHoachOtId.Value) && x.TrangThai != 1)
-                            //Các kế hoạch OT mà phòng ban của người đăng nhập được tham gia và có trạng thái khác Mới
-                            ).ToList();
-                    }
-                    else
-                    //Nếu là nhân viên
-                    {
-                        //Các kế hoạch OT mà phòng ban của người đăng nhập được tham gia và có trạng thái khác Mới
-                        var listKehoachtOtIdPhongBanThamGia = context.KeHoachOtPhongBan.Where(x => x.OrganizationId == employeeLogin.OrganizationId.Value)
-                                .Select(x => x.KeHoachOtId).Distinct().ToList();
-                        ListKeHoachOt = ListKeHoachOt.Where(x =>
-                                x.NguoiDeXuatId == employeeLogin.EmployeeId  ||
-                                (listKehoachtOtIdPhongBanThamGia.Contains(x.KeHoachOtId.Value) && x.TrangThai != 1)
-                        ).ToList();
-                    }
+                            listData = listData.OrderByDescending(x => x.CreatedDate).ToList();
+                        }
+                    });
                 }
                 else
                 {
-                    //Lấy các kế hoạch người đăng nhập tạo và các đề xuất có trạng thái kahsc mới
-                    ListKeHoachOt = ListKeHoachOt.Where(x =>
+                    //Lấy các kế hoạch người đăng nhập tạo và các đề xuất có trạng thái khác mới
+                    listData = ListKeHoachOt.Where(x =>
                                 x.NguoiDeXuatId == employeeLogin.EmployeeId || //Người đăng nhập tạo
                                 (x.NguoiDeXuatId != employeeLogin.EmployeeId && x.TrangThai != 1)
                         //không phải người đăng nhập tạo và có thái khác  Mới
@@ -14603,7 +14673,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 {
                     StatusCode = HttpStatusCode.OK,
                     MessageCode = "Success",
-                    listKeHoachOt = ListKeHoachOt,
+                    listKeHoachOt = listData,
                     listTrangThaiKeHoach = listTrangThaiKeHoachOt,
                     CompanyConfig = companyConfig,
                 };
@@ -14784,13 +14854,16 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 thongTinDeXuatTL.LoaiDeXuat = deXuatTangLuong.LoaiDeXuat;
                 thongTinDeXuatTL.NgayDeXuat = deXuatTangLuong.NgayDeXuat;
                 thongTinDeXuatTL.NguoiDeXuatId = deXuatTangLuong.NguoiDeXuatId;
+                thongTinDeXuatTL.NguoiDeXuatName =
+                    context.Employee.FirstOrDefault(x => x.EmployeeId == deXuatTangLuong.NguoiDeXuatId)?.EmployeeName;
                 thongTinDeXuatTL.PhongBanId = deXuatTangLuong.PhongBanId;
                 thongTinDeXuatTL.ChucVuId = deXuatTangLuong.ChucVuId;
                 thongTinDeXuatTL.NgayApDung = deXuatTangLuong.NgayApDung;
                 thongTinDeXuatTL.GhiChu = deXuatTangLuong.GhiChu;
                 thongTinDeXuatTL.TrangThai = deXuatTangLuong.TrangThai;
-                thongTinDeXuatTL.CreatedById = deXuatTangLuong.CreatedById;
+                thongTinDeXuatTL.CreatedById = deXuatTangLuong.CreatedById; 
                 thongTinDeXuatTL.CreatedDate = deXuatTangLuong.CreatedDate;
+                thongTinDeXuatTL.UpdatedDate = deXuatTangLuong.UpdatedDate;
 
                 var nhanVienDuocDeXuat = context.DeXuatTangLuongNhanVien.Where(x => x.Active == true && x.DeXuatTangLuongId == request.DeXuatTLId).Select(
                         NvTL => new DeXuatTangLuongNhanVienEntityModel
@@ -15014,31 +15087,6 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         isShowXoa = true;
                         isShowLuu = true;
                     }
-                    else
-                    {
-                        var phongBanNguoiDangNhap =
-                            context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == deXuatTangLuong.NguoiDeXuatId);
-
-                        var empCreate = context.User.FirstOrDefault(x => x.UserId == deXuatTangLuong.CreatedById);
-
-                        var phongBanNguoiTao =
-                            context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == empCreate.EmployeeId);
-
-                        var phongBanNhanVienBanHang =
-                            context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == deXuatTangLuong.NguoiDeXuatId);
-
-                        //Trưởng bộ phận
-                        if (phongBanNguoiDangNhap?.IsManager == 1)
-                        {
-                            if (phongBanNguoiDangNhap?.OrganizationId == phongBanNguoiTao?.OrganizationId ||
-                                phongBanNguoiDangNhap?.OrganizationId == phongBanNhanVienBanHang?.OrganizationId)
-                            {
-                                isShowGuiXacNhan = true;
-                                isShowXoa = true;
-                                isShowLuu = true;
-                            }
-                        }
-                    }
                 }
 
                 if (deXuatTangLuong.TrangThai == 2) // chờ phê duyệt
@@ -15095,68 +15143,21 @@ namespace TN.TNM.DataAccess.Databases.DAO
                             isShowTuChoi = true;
                         }
                     }
-                }
-
-                // trang thai cho phe duyet
-                if (deXuatTangLuong.TrangThai == 2 && user.EmployeeId == deXuatTangLuong.NguoiDeXuatId)
-                {
-                    var count =
-                        context.CacBuocApDung.Count(x => x.ObjectNumber == deXuatTangLuong.DeXuatTangLuongId &&
-                                                         x.DoiTuongApDung == 10 && x.TrangThai == 1);
-
-                    if (count == 0)
+                    //Nếu là Phê duyệt trưởng bộ phận cấp trên
+                    else if (buocHienTai?.LoaiPheDuyet == 3)
                     {
-                        isShowHuyYeuCauXacNhan = true;
-                    }
-                }
+                        //Lấy phòng ban cấp trên của người đề xuất
+                        var _emp = context.Employee.FirstOrDefault(x => x.EmployeeId == user.EmployeeId);
 
-                if (deXuatTangLuong.TrangThai == 3) //Đã Phê duyệt 
-                {
-                    var phongBanNguoiDangNhap =
-                            context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == employee.EmployeeId);
+                        var exists = context.PhongBanPheDuyetDoiTuong.FirstOrDefault(x =>
+                            x.ObjectNumber == deXuatTangLuong.DeXuatTangLuongId && x.DoiTuongApDung == 10 &&
+                            x.IsPheDuyetCapTren == true && x.OrganizationId == _emp.OrganizationId);
 
-                    var empCreate = context.User.FirstOrDefault(x => x.UserId == deXuatTangLuong.CreatedById);
-                    var phongBanNguoiTao =
-                        context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == empCreate.EmployeeId);
-
-                    var phongBanNhanVienBanHang =
-                        context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == deXuatTangLuong.NguoiDeXuatId);
-
-                    //Trưởng bộ phận
-                    if (phongBanNguoiDangNhap?.IsManager == 1)
-                    {
-                        if (phongBanNguoiDangNhap?.OrganizationId == phongBanNguoiTao?.OrganizationId ||
-                            phongBanNguoiDangNhap?.OrganizationId == phongBanNhanVienBanHang?.OrganizationId)
+                        //Nếu phòng ban cấp trên của người đang đăng nhập giống trong cấu hình thì
+                        if (exists != null)
                         {
-                            isShowHuy = true;
-                        }
-
-                        if (listIdPhongBanTrongCacBuocQuyTrinh.Contains(phongBanNguoiDangNhap.OrganizationId))
-                        {
-                            isShowHuy = true;
-                        }
-                    }
-                }
-
-                if (deXuatTangLuong.TrangThai == 3)
-                {
-                    var phongBanNguoiDangNhap =
-                        context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == employee.EmployeeId);
-
-                    var empCreate = context.User.FirstOrDefault(x => x.UserId == deXuatTangLuong.CreatedById);
-                    var phongBanNguoiTao =
-                        context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == empCreate.EmployeeId.Value);
-
-                    var phongBanNhanVienBanHang =
-                        context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == deXuatTangLuong.NguoiDeXuatId);
-
-                    //Trưởng bộ phận phòng ban người tạo hoặc Trưởng bộ phận phòng ban của nhân viên bán hàng
-                    if (phongBanNguoiDangNhap?.IsManager == 1)
-                    {
-                        if (phongBanNguoiDangNhap?.OrganizationId == phongBanNguoiTao?.OrganizationId ||
-                            phongBanNguoiDangNhap?.OrganizationId == phongBanNhanVienBanHang?.OrganizationId)
-                        {
-                            isShowHoanThanh = true;
+                            isShowXacNhan = true;
+                            isShowTuChoi = true;
                         }
                     }
                 }
@@ -15234,8 +15235,8 @@ namespace TN.TNM.DataAccess.Databases.DAO
         {
             try
             {
-
                 #region Check permision: manager
+
                 var user = context.User.FirstOrDefault(x => x.UserId == request.UserId && x.Active == true);
                 if (user == null)
                 {
@@ -15255,6 +15256,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 }
 
                 #endregion
+
                 var lstAllDeXuatNhanVien = context.DeXuatTangLuongNhanVien.ToList();
                 var lstAllEmp = context.Employee.Where(x => x.Active == true).ToList();
 
@@ -15264,8 +15266,8 @@ namespace TN.TNM.DataAccess.Databases.DAO
 
                 #region Phân quyền dữ liệu theo quy trình phê duyệt
 
-                var thanhVienPhongBan =
-                    context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == employeeLogin.EmployeeId);
+                var listThanhVienPhongBan =
+                    context.ThanhVienPhongBan.Where(x => x.EmployeeId == user.EmployeeId).ToList();
 
                 var thongTinDeXuatTL = new List<DeXuatTangLuongEntityModel>();
 
@@ -15273,77 +15275,93 @@ namespace TN.TNM.DataAccess.Databases.DAO
 
                 if (isAccess != true)
                 {
-                    //Nếu là trưởng bộ phận (IsManager = 1)
-                    if (thanhVienPhongBan.IsManager == 1)
-                    {
-                        //Lấy ra list đối tượng id mà người dùng phụ trách phê duyệt
-                        var listId = context.PhongBanPheDuyetDoiTuong
-                            .Where(x => x.DoiTuongApDung == 10 &&
-                                        x.OrganizationId == thanhVienPhongBan.OrganizationId).Select(y => y.ObjectNumber)
-                            .ToList();
-
-                        var listEmpIdPhongBan = lstAllEmp.Where(x => x.OrganizationId == employeeLogin.OrganizationId).Select(x => x.EmployeeId).ToList();
-                        thongTinDeXuatTL = context.DeXuatTangLuong
-                         .Where(x =>
-                            (request.NguoiDeXuatId == null || x.NguoiDeXuatId == request.NguoiDeXuatId) &&
-                            (request.ThoiGianDeXuat == null || x.NgayDeXuat.ToShortDateString() == request.ThoiGianDeXuat.Value.ToShortDateString()) &&
+                    var _thongTinDeXuatTL = context.DeXuatTangLuong
+                        .Where(x =>
+                            (request.ThoiGianDeXuat == null || x.NgayDeXuat.Date ==
+                             request.ThoiGianDeXuat.Value.Date) &&
                             (request.TrangThai == null || x.TrangThai == request.TrangThai) &&
-                            (listId.Contains(x.DeXuatTangLuongId) // cần phê duyệt
-                            || x.NguoiDeXuatId == employeeLogin.EmployeeId // người đề xuất
-                            || listEmpIdPhongBan.Contains(x.NguoiDeXuatId) && x.TrangThai != 1) // cùng phòng ban khác trạng thái mới
+                            x.NguoiDeXuatId == employeeLogin.EmployeeId &&
+                            x.Active == true)
+                        .Select(y => new DeXuatTangLuongEntityModel()
+                        {
+                            DeXuatTangLuongId = y.DeXuatTangLuongId,
+                            TenDeXuat = y.TenDeXuat,
+                            LoaiDeXuat = y.LoaiDeXuat,
+                            NgayDeXuat = y.NgayDeXuat,
+                            NguoiDeXuatId = y.NguoiDeXuatId,
+                            PhongBanId = y.PhongBanId,
+                            ChucVuId = y.ChucVuId,
+                            GhiChu = y.GhiChu,
+                            TrangThai = y.TrangThai,
+                            TongMucDeXuat = lstAllDeXuatNhanVien.Where(x => x.DeXuatTangLuongId == y.DeXuatTangLuongId)
+                                .Sum(x => x.LuongDeXuat - x.LuongHienTai),
+                            NguoiDeXuatName = lstAllEmp.FirstOrDefault(x => x.EmployeeId == y.NguoiDeXuatId)
+                                .EmployeeName,
+                            CreatedById = y.CreatedById,
+                            CreatedDate = y.CreatedDate
+                        }).OrderByDescending(x => x.CreatedDate).ToList();
 
-                            && x.Active == true)
-                         .Select(y => new DeXuatTangLuongEntityModel()
-                         {
-                             DeXuatTangLuongId = y.DeXuatTangLuongId,
-                             TenDeXuat = y.TenDeXuat,
-                             LoaiDeXuat = y.LoaiDeXuat,
-                             NgayDeXuat = y.NgayDeXuat,
-                             NguoiDeXuatId = y.NguoiDeXuatId,
-                             PhongBanId = y.PhongBanId,
-                             ChucVuId = y.ChucVuId,
-                             GhiChu = y.GhiChu,
-                             TrangThai = y.TrangThai,
-                             TongMucDeXuat = lstAllDeXuatNhanVien.Where(x => x.DeXuatTangLuongId == y.DeXuatTangLuongId).Sum(x => x.LuongDeXuat - x.LuongHienTai),
-                             NguoiDeXuatName = lstAllEmp.FirstOrDefault(x => x.EmployeeId == y.NguoiDeXuatId).EmployeeName,
-                             CreatedById = y.CreatedById,
-                             CreatedDate = y.CreatedDate
-                         }).OrderByDescending(x => x.CreatedDate).ToList();
+                    thongTinDeXuatTL.AddRange(_thongTinDeXuatTL);
 
-                    }
-                    //Nếu là nhân viên thường (IsManager = 0)
-                    else
+                    listThanhVienPhongBan.ForEach(item =>
                     {
-                        thongTinDeXuatTL = context.DeXuatTangLuong
-                           .Where(x =>
-                              (request.NguoiDeXuatId == null || x.NguoiDeXuatId == request.NguoiDeXuatId) &&
-                              (request.ThoiGianDeXuat == null || x.NgayDeXuat.ToShortDateString() == request.ThoiGianDeXuat.Value.ToShortDateString()) &&
-                              (request.TrangThai == null || x.TrangThai == request.TrangThai) && x.NguoiDeXuatId == employeeLogin.EmployeeId &&
-                              x.Active == true)
-                           .Select(y => new DeXuatTangLuongEntityModel()
-                           {
-                               DeXuatTangLuongId = y.DeXuatTangLuongId,
-                               TenDeXuat = y.TenDeXuat,
-                               LoaiDeXuat = y.LoaiDeXuat,
-                               NgayDeXuat = y.NgayDeXuat,
-                               NguoiDeXuatId = y.NguoiDeXuatId,
-                               PhongBanId = y.PhongBanId,
-                               ChucVuId = y.ChucVuId,
-                               GhiChu = y.GhiChu,
-                               TrangThai = y.TrangThai,
-                               TongMucDeXuat = lstAllDeXuatNhanVien.Where(x => x.DeXuatTangLuongId == y.DeXuatTangLuongId).Sum(x => x.LuongDeXuat - x.LuongHienTai),
-                               NguoiDeXuatName = lstAllEmp.FirstOrDefault(x => x.EmployeeId == y.NguoiDeXuatId).EmployeeName,
-                               CreatedById = y.CreatedById,
-                               CreatedDate = y.CreatedDate
-                           }).OrderByDescending(x => x.CreatedDate).ToList();
-                    }
+                        //Nếu là trưởng bộ phận
+                        if (item.IsManager == 1)
+                        {
+                            //Lấy ra list đối tượng id mà người dùng phụ trách phê duyệt
+                            var listId = context.PhongBanPheDuyetDoiTuong
+                                .Where(x => x.DoiTuongApDung == 10 &&
+                                            x.OrganizationId == item.OrganizationId).Select(y => y.ObjectNumber)
+                                .ToList();
+
+                            //Lọc ra các Id các bản ghi đã được lấy ở trên
+                            var listIgnoreId = thongTinDeXuatTL.Select(y => y.DeXuatTangLuongId.Value).ToList();
+
+                            var listEmpIdPhongBan = lstAllEmp.Where(x => x.OrganizationId == employeeLogin.OrganizationId).Select(x => x.EmployeeId).ToList();
+
+                            var thongTinDeXuatTL_CanPheDuyet = context.DeXuatTangLuong
+                                .Where(x =>
+                                    (listIgnoreId.Count == 0 || !listIgnoreId.Contains(x.DeXuatTangLuongId)) &&
+                                    (request.NguoiDeXuatId == null || x.NguoiDeXuatId == request.NguoiDeXuatId) &&
+                                    (request.ThoiGianDeXuat == null ||
+                                     x.NgayDeXuat.Date == request.ThoiGianDeXuat.Value.Date) &&
+                                    (request.TrangThai == null || x.TrangThai == request.TrangThai) &&
+                                    (listId.Contains(x.DeXuatTangLuongId) // cần phê duyệt
+                                      || listEmpIdPhongBan.Contains(x.NguoiDeXuatId) && x.TrangThai != 1
+                                    ) // cùng phòng ban khác trạng thái mới
+                                    && x.Active == true)
+                                .Select(y => new DeXuatTangLuongEntityModel()
+                                {
+                                    DeXuatTangLuongId = y.DeXuatTangLuongId,
+                                    TenDeXuat = y.TenDeXuat,
+                                    LoaiDeXuat = y.LoaiDeXuat,
+                                    NgayDeXuat = y.NgayDeXuat,
+                                    NguoiDeXuatId = y.NguoiDeXuatId,
+                                    PhongBanId = y.PhongBanId,
+                                    ChucVuId = y.ChucVuId,
+                                    GhiChu = y.GhiChu,
+                                    TrangThai = y.TrangThai,
+                                    TongMucDeXuat = lstAllDeXuatNhanVien
+                                        .Where(x => x.DeXuatTangLuongId == y.DeXuatTangLuongId)
+                                        .Sum(x => x.LuongDeXuat - x.LuongHienTai),
+                                    NguoiDeXuatName = lstAllEmp.FirstOrDefault(x => x.EmployeeId == y.NguoiDeXuatId)
+                                        .EmployeeName,
+                                    CreatedById = y.CreatedById,
+                                    CreatedDate = y.CreatedDate
+                                }).OrderByDescending(x => x.CreatedDate).ToList();
+
+                            thongTinDeXuatTL.AddRange(thongTinDeXuatTL_CanPheDuyet);
+
+                            thongTinDeXuatTL = thongTinDeXuatTL.OrderByDescending(x => x.CreatedDate).ToList();
+                        }
+                    });
                 }
                 else
                 {
                     thongTinDeXuatTL = context.DeXuatTangLuong
                      .Where(x =>
                         (request.NguoiDeXuatId == null || x.NguoiDeXuatId == request.NguoiDeXuatId) &&
-                        (request.ThoiGianDeXuat == null || x.NgayDeXuat.ToShortDateString() == request.ThoiGianDeXuat.Value.ToShortDateString()) &&
+                        (request.ThoiGianDeXuat == null || x.NgayDeXuat.Date == request.ThoiGianDeXuat.Value.Date) &&
                         (request.TrangThai == null || x.TrangThai == request.TrangThai) &&
                         (x.CreatedById == user.UserId || // Theo người tạo
                         (x.CreatedById != user.UserId && x.TrangThai != 1)) // cùng phòng ban khác trạng thái mới
@@ -15365,7 +15383,6 @@ namespace TN.TNM.DataAccess.Databases.DAO
                          CreatedDate = y.CreatedDate
                      }).OrderByDescending(x => x.CreatedDate).ToList();
                 }
-               
 
                 #endregion
 
@@ -15469,7 +15486,6 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     deXuatTangLuong.TenDeXuat = request.DeXuatTangLuong.TenDeXuat.Trim();
                     deXuatTangLuong.LoaiDeXuat = request.DeXuatTangLuong.LoaiDeXuat;
                     deXuatTangLuong.NgayDeXuat = request.DeXuatTangLuong.NgayDeXuat;
-                    deXuatTangLuong.NguoiDeXuatId = request.DeXuatTangLuong.NguoiDeXuatId;
                     deXuatTangLuong.NgayApDung = request.DeXuatTangLuong.NgayApDung ?? null;
                     deXuatTangLuong.TrangThai = request.DeXuatTangLuong.TrangThai;
                     deXuatTangLuong.Active = true;
@@ -16056,134 +16072,116 @@ namespace TN.TNM.DataAccess.Databases.DAO
 
                 var employeeLogin = context.Employee.FirstOrDefault(x => x.EmployeeId == user.EmployeeId);
 
-                #region Phân quyền dữ liệu (code cũ): Giang comment
-
-                //var isManager = employeeLogin.IsManager;
-
-                //if (isManager == true)
-                //{
-                //    //Lấy list phòng ban con của user
-                //    List<Guid?> listGetAllChild = new List<Guid?>();    //List phòng ban: chính nó và các phòng ban cấp dưới của nó
-                //    if (employeeLogin.OrganizationId != null)
-                //    {
-                //        listGetAllChild.Add(employeeLogin.OrganizationId.Value);
-                //        listGetAllChild = getOrganizationChildrenId(employeeLogin.OrganizationId.Value, listGetAllChild);
-                //    }
-                //    //Lấy danh sách nhân viên EmployyeeId mà user phụ trách
-                //    var listEmployeeInChargeByManager = listEmp.Where(x => (listGetAllChild == null || listGetAllChild.Count == 0 || listGetAllChild.Contains(x.OrganizationId))).ToList();
-                //    List<Guid> listEmployeeInChargeByManagerId = new List<Guid>();
-
-                //    listEmployeeInChargeByManager.ForEach(item =>
-                //    {
-                //        if (item.EmployeeId != null && item.EmployeeId != Guid.Empty)
-                //            listEmployeeInChargeByManagerId.Add(item.EmployeeId);
-                //    });
-
-                //    listEmp = listEmp.Where(x => listEmployeeInChargeByManagerId.Contains(x.EmployeeId)).ToList();
-                //}
-                //else
-                //{
-                //    //Nếu không phải quản lý
-                //    listEmp = listEmp.Where(x => x.EmployeeId == employeeId).ToList();
-                //}
-
-                #endregion
-
                 #region Phân quyền dữ liệu theo quy trình phê duyệt
 
-                var thanhVienPhongBan =
-                    context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == employeeLogin.EmployeeId);
+                var listThanhVienPhongBan =
+                    context.ThanhVienPhongBan.Where(x => x.EmployeeId == employeeLogin.EmployeeId).ToList();
 
                 var thongTinDeXuatTL = new List<DeXuatChucVuEntityModel>();
 
                 var isAccess = context.Organization.FirstOrDefault(x => x.OrganizationId == employeeLogin.OrganizationId).IsAccess;
 
-                if(isAccess != true)
+                var listEmpIdCungPhongBan = context.Employee
+                    .Where(x => x.OrganizationId == employeeLogin.OrganizationId).Select(x => x.EmployeeId).ToList();
+
+                if (isAccess != true)
                 {
-                    //Nếu là trưởng bộ phận (IsManager = 1)
-                    if (thanhVienPhongBan.IsManager == 1)
+                    var _thongTinDeXuatTL = (from DeXuatThayDoiChucVu in context.DeXuatThayDoiChucVu
+                        join Emp in context.Employee on DeXuatThayDoiChucVu.NguoiDeXuatId equals Emp.EmployeeId
+                        where
+                            (request.ThoiGianDeXuat == null || DeXuatThayDoiChucVu.NgayDeXuat.ToShortDateString() ==
+                             request.ThoiGianDeXuat.Value.ToShortDateString()) &&
+                            (request.TrangThai == null || DeXuatThayDoiChucVu.TrangThai == request.TrangThai) &&
+                            DeXuatThayDoiChucVu.Active == true &&
+                            DeXuatThayDoiChucVu.NguoiDeXuatId == employeeLogin.EmployeeId
+                        select new DeXuatChucVuEntityModel
+                        {
+                            DeXuatThayDoiChucVuId = DeXuatThayDoiChucVu.DeXuatThayDoiChucVuId,
+                            TenDeXuat = DeXuatThayDoiChucVu.TenDeXuat,
+                            NgayDeXuat = DeXuatThayDoiChucVu.NgayDeXuat,
+                            NguoiDeXuatId = DeXuatThayDoiChucVu.NguoiDeXuatId,
+                            TrangThai = DeXuatThayDoiChucVu.TrangThai,
+                            NguoiDeXuatName = Emp.EmployeeName,
+                            CreatedById = DeXuatThayDoiChucVu.CreatedById,
+                            CreatedDate = DeXuatThayDoiChucVu.CreatedDate
+                        }).OrderByDescending(x => x.CreatedDate).ToList();
+
+                    thongTinDeXuatTL.AddRange(_thongTinDeXuatTL);
+
+                    listThanhVienPhongBan.ForEach(item =>
                     {
-                        //Lấy ra list đối tượng id mà người dùng phụ trách phê duyệt
-                        var listId = context.PhongBanPheDuyetDoiTuong
-                            .Where(x => x.DoiTuongApDung == 11 &&
-                                        x.OrganizationId == thanhVienPhongBan.OrganizationId).Select(y => y.ObjectNumber)
-                            .ToList();
-                        var listEmpIdCungPhongBan = context.Employee.Where(x => x.OrganizationId == employeeLogin.OrganizationId).Select(x => x.EmployeeId).ToList();
-                        thongTinDeXuatTL = (from DeXuatThayDoiChucVu in context.DeXuatThayDoiChucVu
-                                            join Emp in context.Employee on DeXuatThayDoiChucVu.NguoiDeXuatId equals Emp.EmployeeId
-                                            where
-                                                (request.NguoiDeXuatId == null ||
-                                                 DeXuatThayDoiChucVu.NguoiDeXuatId == request.NguoiDeXuatId) &&
-                                                (request.ThoiGianDeXuat == null || DeXuatThayDoiChucVu.NgayDeXuat.ToShortDateString() ==
-                                                 request.ThoiGianDeXuat.Value.ToShortDateString()) &&
-                                                (request.TrangThai == null || DeXuatThayDoiChucVu.TrangThai == request.TrangThai) &&
-                                                DeXuatThayDoiChucVu.Active == true &&
-                                                (DeXuatThayDoiChucVu.NguoiDeXuatId == employeeLogin.EmployeeId || //Người tạo
-                                                 (listId.Contains(DeXuatThayDoiChucVu.DeXuatThayDoiChucVuId)  // cần phê duyệt
-                                                 || (listEmpIdCungPhongBan.Contains(DeXuatThayDoiChucVu.NguoiDeXuatId.Value)) && DeXuatThayDoiChucVu.TrangThai != 1)) // cùng phòng ban tt khác 1
-                                            select new DeXuatChucVuEntityModel
-                                            {
-                                                DeXuatThayDoiChucVuId = DeXuatThayDoiChucVu.DeXuatThayDoiChucVuId,
-                                                TenDeXuat = DeXuatThayDoiChucVu.TenDeXuat,
-                                                NgayDeXuat = DeXuatThayDoiChucVu.NgayDeXuat,
-                                                NguoiDeXuatId = DeXuatThayDoiChucVu.NguoiDeXuatId,
-                                                TrangThai = DeXuatThayDoiChucVu.TrangThai,
-                                                NguoiDeXuatName = Emp.EmployeeName,
-                                                CreatedById = DeXuatThayDoiChucVu.CreatedById,
-                                                CreatedDate = DeXuatThayDoiChucVu.CreatedDate
-                                            }).OrderByDescending(x => x.CreatedDate).ToList();
-                    }
-                    //Nếu là nhân viên thường (IsManager = 0)
-                    else
-                    {
-                        thongTinDeXuatTL = (from DeXuatThayDoiChucVu in context.DeXuatThayDoiChucVu
-                                            join Emp in context.Employee on DeXuatThayDoiChucVu.NguoiDeXuatId equals Emp.EmployeeId
-                                            where
-                                                (request.NguoiDeXuatId == null ||
-                                                 DeXuatThayDoiChucVu.NguoiDeXuatId == request.NguoiDeXuatId) &&
-                                                (request.ThoiGianDeXuat == null || DeXuatThayDoiChucVu.NgayDeXuat.ToShortDateString() ==
-                                                 request.ThoiGianDeXuat.Value.ToShortDateString()) &&
-                                                (request.TrangThai == null || DeXuatThayDoiChucVu.TrangThai == request.TrangThai) &&
-                                                DeXuatThayDoiChucVu.Active == true &&
-                                                DeXuatThayDoiChucVu.NguoiDeXuatId == employeeLogin.EmployeeId
-                                            select new DeXuatChucVuEntityModel
-                                            {
-                                                DeXuatThayDoiChucVuId = DeXuatThayDoiChucVu.DeXuatThayDoiChucVuId,
-                                                TenDeXuat = DeXuatThayDoiChucVu.TenDeXuat,
-                                                NgayDeXuat = DeXuatThayDoiChucVu.NgayDeXuat,
-                                                NguoiDeXuatId = DeXuatThayDoiChucVu.NguoiDeXuatId,
-                                                TrangThai = DeXuatThayDoiChucVu.TrangThai,
-                                                NguoiDeXuatName = Emp.EmployeeName,
-                                                CreatedById = DeXuatThayDoiChucVu.CreatedById,
-                                                CreatedDate = DeXuatThayDoiChucVu.CreatedDate
-                                            }).OrderByDescending(x => x.CreatedDate).ToList();
-                    }
+                        //Nếu là trưởng bộ phận
+                        if (item.IsManager == 1)
+                        {
+                            //Lấy ra list đối tượng id mà người dùng phụ trách phê duyệt
+                            var listId = context.PhongBanPheDuyetDoiTuong
+                                .Where(x => x.DoiTuongApDung == 11 &&
+                                            x.OrganizationId == item.OrganizationId).Select(y => y.ObjectNumber)
+                                .ToList();
+
+                            //Lọc ra các Id các bản ghi đã được lấy ở trên
+                            var listIgnoreId = thongTinDeXuatTL.Select(y => y.DeXuatThayDoiChucVuId).ToList();
+
+                            var thongTinDeXuatTL_CanPheDuyet = (from DeXuatThayDoiChucVu in context.DeXuatThayDoiChucVu
+                                join Emp in context.Employee on DeXuatThayDoiChucVu.NguoiDeXuatId equals Emp.EmployeeId
+                                where
+                                    (listIgnoreId.Count == 0 ||
+                                     !listIgnoreId.Contains(DeXuatThayDoiChucVu.DeXuatThayDoiChucVuId)) &&
+                                    (request.NguoiDeXuatId == null ||
+                                     DeXuatThayDoiChucVu.NguoiDeXuatId == request.NguoiDeXuatId) &&
+                                    (request.ThoiGianDeXuat == null ||
+                                     DeXuatThayDoiChucVu.NgayDeXuat.ToShortDateString() ==
+                                     request.ThoiGianDeXuat.Value.ToShortDateString()) &&
+                                    (request.TrangThai == null || DeXuatThayDoiChucVu.TrangThai == request.TrangThai) &&
+                                    DeXuatThayDoiChucVu.Active == true &&
+                                    (listId.Contains(DeXuatThayDoiChucVu.DeXuatThayDoiChucVuId) // cần phê duyệt 
+                                     || (listEmpIdCungPhongBan.Contains(DeXuatThayDoiChucVu.NguoiDeXuatId.Value))) // cùng phòng ban
+                                      && DeXuatThayDoiChucVu.TrangThai != 1 // tt khác 1
+                                select new DeXuatChucVuEntityModel
+                                {
+                                    DeXuatThayDoiChucVuId = DeXuatThayDoiChucVu.DeXuatThayDoiChucVuId,
+                                    TenDeXuat = DeXuatThayDoiChucVu.TenDeXuat,
+                                    NgayDeXuat = DeXuatThayDoiChucVu.NgayDeXuat,
+                                    NguoiDeXuatId = DeXuatThayDoiChucVu.NguoiDeXuatId,
+                                    TrangThai = DeXuatThayDoiChucVu.TrangThai,
+                                    NguoiDeXuatName = Emp.EmployeeName,
+                                    CreatedById = DeXuatThayDoiChucVu.CreatedById,
+                                    CreatedDate = DeXuatThayDoiChucVu.CreatedDate
+                                }).OrderByDescending(x => x.CreatedDate).ToList();
+
+                            thongTinDeXuatTL.AddRange(thongTinDeXuatTL_CanPheDuyet);
+
+                            thongTinDeXuatTL = thongTinDeXuatTL.OrderByDescending(x => x.CreatedDate).ToList();
+                        }
+                    });
                 }
                 else
                 {
                     thongTinDeXuatTL = (from DeXuatThayDoiChucVu in context.DeXuatThayDoiChucVu
-                                        join Emp in context.Employee on DeXuatThayDoiChucVu.NguoiDeXuatId equals Emp.EmployeeId
-                                        where
-                                            (request.NguoiDeXuatId == null ||
-                                             DeXuatThayDoiChucVu.NguoiDeXuatId == request.NguoiDeXuatId) &&
-                                            (request.ThoiGianDeXuat == null || DeXuatThayDoiChucVu.NgayDeXuat.ToShortDateString() ==
-                                             request.ThoiGianDeXuat.Value.ToShortDateString()) &&
-                                            (request.TrangThai == null || DeXuatThayDoiChucVu.TrangThai == request.TrangThai) &&
-                                            DeXuatThayDoiChucVu.Active == true &&
-                                            (DeXuatThayDoiChucVu.NguoiDeXuatId == employeeLogin.EmployeeId || // Người đăng nhập là người tạo
-                                            (DeXuatThayDoiChucVu.NguoiDeXuatId != employeeLogin.EmployeeId && DeXuatThayDoiChucVu.TrangThai != 1)) // của ngời khác và khác mới
-                                        select new DeXuatChucVuEntityModel
-                                        {
-                                            DeXuatThayDoiChucVuId = DeXuatThayDoiChucVu.DeXuatThayDoiChucVuId,
-                                            TenDeXuat = DeXuatThayDoiChucVu.TenDeXuat,
-                                            NgayDeXuat = DeXuatThayDoiChucVu.NgayDeXuat,
-                                            NguoiDeXuatId = DeXuatThayDoiChucVu.NguoiDeXuatId,
-                                            TrangThai = DeXuatThayDoiChucVu.TrangThai,
-                                            NguoiDeXuatName = Emp.EmployeeName,
-                                            CreatedById = DeXuatThayDoiChucVu.CreatedById,
-                                            CreatedDate = DeXuatThayDoiChucVu.CreatedDate
-                                        }).OrderByDescending(x => x.CreatedDate).ToList();
+                        join Emp in context.Employee on DeXuatThayDoiChucVu.NguoiDeXuatId equals Emp.EmployeeId
+                        where
+                            (request.NguoiDeXuatId == null ||
+                             DeXuatThayDoiChucVu.NguoiDeXuatId == request.NguoiDeXuatId) &&
+                            (request.ThoiGianDeXuat == null || DeXuatThayDoiChucVu.NgayDeXuat.ToShortDateString() ==
+                             request.ThoiGianDeXuat.Value.ToShortDateString()) &&
+                            (request.TrangThai == null || DeXuatThayDoiChucVu.TrangThai == request.TrangThai) &&
+                            DeXuatThayDoiChucVu.Active == true &&
+                            (DeXuatThayDoiChucVu.NguoiDeXuatId == employeeLogin.EmployeeId || // Người đăng nhập là người tạo
+                             (DeXuatThayDoiChucVu.NguoiDeXuatId != employeeLogin.EmployeeId &&
+                              DeXuatThayDoiChucVu.TrangThai != 1)) // của ngời khác và khác mới
+                        select new DeXuatChucVuEntityModel
+                        {
+                            DeXuatThayDoiChucVuId = DeXuatThayDoiChucVu.DeXuatThayDoiChucVuId,
+                            TenDeXuat = DeXuatThayDoiChucVu.TenDeXuat,
+                            NgayDeXuat = DeXuatThayDoiChucVu.NgayDeXuat,
+                            NguoiDeXuatId = DeXuatThayDoiChucVu.NguoiDeXuatId,
+                            TrangThai = DeXuatThayDoiChucVu.TrangThai,
+                            NguoiDeXuatName = Emp.EmployeeName,
+                            CreatedById = DeXuatThayDoiChucVu.CreatedById,
+                            CreatedDate = DeXuatThayDoiChucVu.CreatedDate
+                        }).OrderByDescending(x => x.CreatedDate).ToList();
                 }
+
                 #endregion
 
                 thongTinDeXuatTL.ForEach(item =>
@@ -16300,6 +16298,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 DeXuatChucVu.TrangThai = deXuatChucVu.TrangThai;
                 DeXuatChucVu.CreatedById = deXuatChucVu.CreatedById;
                 DeXuatChucVu.CreatedDate = deXuatChucVu.CreatedDate;
+                DeXuatChucVu.UpdatedDate = deXuatChucVu.UpdatedDate;
 
                 var nhanVienDuocDeXuat = context.NhanVienDeXuatThayDoiChucVu.Where(x => x.DeXuatThayDoiChucVuId == request.DeXuatTLId && x.Active == true)
                     .Select(NvCV => new DeXuatChucVuNhanVienEntityModel
@@ -16330,6 +16329,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         NvCV.PositionNameDx = listChucVu.FirstOrDefault(x => x.PositionId == NvCV.ChucVuDeXuatId)?.PositionName;
                         NvCV.EmployeeCode = empInFor != null ? empInFor.EmployeeCode : "";
                         NvCV.EmployeeName = empInFor != null ? empInFor.EmployeeName : "";
+                        //NvCV.DateOfBirth = empInFor?.DateOfBirth;
                     }
 
                     var contactInfor = listConTact.FirstOrDefault(x => x.ObjectId == NvCV.EmployeeId);
@@ -16341,6 +16341,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     NvCV.HoKhauThuongTruTa = contactInfor?.HoKhauThuongTruTa;
                     NvCV.Address = contactInfor?.Address;
                     NvCV.AddressTiengAnh = contactInfor?.AddressTiengAnh;
+                    NvCV.DateOfBirth = contactInfor?.DateOfBirth;
                 });
 
                 //Thông tin cty
@@ -16404,41 +16405,11 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 //Trạng thái đề xuất
                 if (deXuatChucVu.TrangThai == 1) // mới
                 {
-                    if (deXuatChucVu.CreatedById == user.UserId)
+                    if (deXuatChucVu.CreatedById == user.UserId || deXuatChucVu.NguoiDeXuatId == employee.EmployeeId)
                     {
                         isShowGuiXacNhan = true;
                         isShowXoa = true;
                         isShowLuu = true;
-                    }
-                    else if (deXuatChucVu.NguoiDeXuatId == employee.EmployeeId)
-                    {
-                        isShowGuiXacNhan = true;
-                        isShowXoa = true;
-                        isShowLuu = true;
-                    }
-                    else
-                    {
-                        var phongBanNguoiDangNhap =
-                            context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == deXuatChucVu.NguoiDeXuatId);
-
-                        var empCreate = context.User.FirstOrDefault(x => x.UserId == deXuatChucVu.CreatedById);
-                        var phongBanNguoiTao =
-                            context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == empCreate.EmployeeId);
-
-                        var phongBanNhanVienBanHang =
-                            context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == deXuatChucVu.NguoiDeXuatId);
-
-                        //Trưởng bộ phận
-                        if (phongBanNguoiDangNhap?.IsManager == 1)
-                        {
-                            if (phongBanNguoiDangNhap?.OrganizationId == phongBanNguoiTao?.OrganizationId ||
-                                phongBanNguoiDangNhap?.OrganizationId == phongBanNhanVienBanHang?.OrganizationId)
-                            {
-                                isShowGuiXacNhan = true;
-                                isShowXoa = true;
-                                isShowLuu = true;
-                            }
-                        }
                     }
                 }
 
@@ -16496,68 +16467,21 @@ namespace TN.TNM.DataAccess.Databases.DAO
                             isShowTuChoi = true;
                         }
                     }
-                }
-
-                // trang thai cho phe duyet
-                if (deXuatChucVu.TrangThai == 2 && user.EmployeeId == deXuatChucVu.NguoiDeXuatId)
-                {
-                    var count =
-                        context.CacBuocApDung.Count(x => x.ObjectNumber == deXuatChucVu.DeXuatThayDoiChucVuId &&
-                                                         x.DoiTuongApDung == 11 && x.TrangThai == 1);
-
-                    if (count == 0)
+                    //Nếu là Phê duyệt trưởng bộ phận cấp trên
+                    else if (buocHienTai?.LoaiPheDuyet == 3)
                     {
-                        isShowHuyYeuCauXacNhan = true;
-                    }
-                }
+                        //Lấy phòng ban cấp trên của người đề xuất
+                        var _emp = context.Employee.FirstOrDefault(x => x.EmployeeId == user.EmployeeId);
 
-                if (deXuatChucVu.TrangThai == 3) //Đã Phê duyệt 
-                {
-                    var phongBanNguoiDangNhap =
-                            context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == employee.EmployeeId);
+                        var exists = context.PhongBanPheDuyetDoiTuong.FirstOrDefault(x =>
+                            x.ObjectNumber == deXuatChucVu.DeXuatThayDoiChucVuId && x.DoiTuongApDung == 11 &&
+                            x.IsPheDuyetCapTren == true && x.OrganizationId == _emp.OrganizationId);
 
-                    var empCreate = context.User.FirstOrDefault(x => x.UserId == deXuatChucVu.CreatedById);
-                    var phongBanNguoiTao =
-                        context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == empCreate.EmployeeId);
-
-                    var phongBanNhanVienBanHang =
-                        context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == deXuatChucVu.NguoiDeXuatId);
-
-                    //Trưởng bộ phận
-                    if (phongBanNguoiDangNhap?.IsManager == 1)
-                    {
-                        if (phongBanNguoiDangNhap?.OrganizationId == phongBanNguoiTao?.OrganizationId ||
-                            phongBanNguoiDangNhap?.OrganizationId == phongBanNhanVienBanHang?.OrganizationId)
+                        //Nếu phòng ban cấp trên của người đang đăng nhập giống trong cấu hình thì
+                        if (exists != null)
                         {
-                            isShowHuy = true;
-                        }
-
-                        if (listIdPhongBanTrongCacBuocQuyTrinh.Contains(phongBanNguoiDangNhap.OrganizationId))
-                        {
-                            isShowHuy = true;
-                        }
-                    }
-                }
-
-                if (deXuatChucVu.TrangThai == 3)
-                {
-                    var phongBanNguoiDangNhap =
-                        context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == employee.EmployeeId);
-
-                    var empCreate = context.User.FirstOrDefault(x => x.UserId == deXuatChucVu.CreatedById);
-                    var phongBanNguoiTao =
-                        context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == empCreate.EmployeeId.Value);
-
-                    var phongBanNhanVienBanHang =
-                        context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == deXuatChucVu.NguoiDeXuatId);
-
-                    //Trưởng bộ phận phòng ban người tạo hoặc Trưởng bộ phận phòng ban của nhân viên bán hàng
-                    if (phongBanNguoiDangNhap?.IsManager == 1)
-                    {
-                        if (phongBanNguoiDangNhap?.OrganizationId == phongBanNguoiTao?.OrganizationId ||
-                            phongBanNguoiDangNhap?.OrganizationId == phongBanNhanVienBanHang?.OrganizationId)
-                        {
-                            isShowHoanThanh = true;
+                            isShowXacNhan = true;
+                            isShowTuChoi = true;
                         }
                     }
                 }
@@ -16930,6 +16854,10 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         };
                     }
 
+                    var isQuanLy = context.ThanhVienPhongBan.FirstOrDefault(x =>
+                                       x.EmployeeId == keHoachOtCheck.NguoiDeXuatId &&
+                                       x.IsPhongBanChinh)?.IsManager == 1;
+
                     //Lấy quy trình
                     var quyTrinhKH = context.QuyTrinh.FirstOrDefault(x => x.HoatDong &&
                                                                         x.DoiTuongApDung == 12);
@@ -16956,29 +16884,36 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     var listALlKeHoachOThanhVien = context.KeHoachOtThanhVien.Where(x => x.KeHoachOtId == keHoachOtCheck.KeHoachOtId).ToList();
                     var listALlKeHoachOTPhongBan = context.KeHoachOtPhongBan.Where(x => x.KeHoachOtId == keHoachOtCheck.KeHoachOtId).ToList();
 
-                    //Chọn cấu hình quy trình
-                    var cauHinhQuyTrinhDangKyOT = context.CauHinhQuyTrinh
-                        .Where(x => x.QuyTrinhId == quyTrinhDK.Id).FirstOrDefault();
+                    var cauHinhQuyTrinhDangKyOT = new CauHinhQuyTrinh();
 
-                    var buoc1 = context.CacBuocQuyTrinh.FirstOrDefault(x =>
-                        x.CauHinhQuyTrinhId == cauHinhQuyTrinhDangKyOT.Id && x.Stt == 1);
+                    //Chọn cấu hình quy trình đăng ký OT
+                    if (isQuanLy)
+                    {
+                        cauHinhQuyTrinhDangKyOT = context.CauHinhQuyTrinh
+                            .Where(x => x.QuyTrinhId == quyTrinhDK.Id && x.LoaiCauHinh == 2).FirstOrDefault();
+                    }
+                    else
+                    {
+                        cauHinhQuyTrinhDangKyOT = context.CauHinhQuyTrinh
+                            .Where(x => x.QuyTrinhId == quyTrinhDK.Id && x.LoaiCauHinh == 1).FirstOrDefault();
+                    }
+
+                    if (cauHinhQuyTrinhDangKyOT == null || cauHinhQuyTrinhDangKyOT.Id == Guid.Empty)
+                    {
+                        return new GetMasterKeHoachOTDetailResult()
+                        {
+                            StatusCode = System.Net.HttpStatusCode.ExpectationFailed,
+                            MessageCode = isQuanLy ? "Chưa có cấu hình Đề xuất cho Quản lý" : "Chưa có cấu hình Đề xuất cho Nhân viên"
+                        };
+                    }
 
                     var listKeHoachOT = context.KeHoachOt.Where(x => x.Active == true).ToList();
                     var _listKeHoachOtId = listKeHoachOT.Select(y => y.KeHoachOtId).ToList();
                     var listKeHoachOtPhongBan = listALlKeHoachOTPhongBan
                         .Where(x => _listKeHoachOtId.Contains(x.KeHoachOtId)).ToList();
-                    var listCacBuocApDung = context.CacBuocApDung.Where(x => x.DoiTuongApDung == 13).ToList();
 
                     bool isContinue = false;
-                    var listNewCacBuocApDung = new List<CacBuocApDung>();
-                    var listNewNote = new List<Note>();
-                    UpdateTrangThaiKeHoachOt(keHoachOtCheck, listKeHoachOtPhongBan, listCacBuocApDung,
-                        quyTrinhDK, cauHinhQuyTrinhDangKyOT, buoc1, parameter.UserId,
-                        out isContinue, out listNewCacBuocApDung, out listNewNote);
-
-                    context.CacBuocApDung.AddRange(listNewCacBuocApDung);
-                    context.Note.AddRange(listNewNote);
-                    context.SaveChanges();
+                    UpdateTrangThaiKeHoachOt(keHoachOtCheck, listKeHoachOtPhongBan, out isContinue);
 
                     var _keHoachOt = context.KeHoachOt.FirstOrDefault(x =>
                         x.KeHoachOtId == parameter.DeXuatOTId && x.Active == true);
@@ -17092,8 +17027,6 @@ namespace TN.TNM.DataAccess.Databases.DAO
                                                GhiChu = otThanhVien.GhiChu,
                                            }).ToList();
 
-                   
-
                     //Lấy dsach tên các loại OT code: LOAIOT
                     var otCategoryTypeId = context.CategoryType.FirstOrDefault(x => x.CategoryTypeCode == "LOAIOT")?.CategoryTypeId;
                     var listLoaiOt = context.Category.Where(x => x.CategoryTypeId == otCategoryTypeId)
@@ -17165,67 +17098,30 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     bool isShowHuy = false;
                     bool isShowHoanThanh = false;
                     bool isShowDatVeMoi = false;
+
                     //Nếu ở trạng thái là đang thực hiện (6) hoặc hoàn thành (7) thì k cần set
                     if (keHoachOt.TrangThai != 6 && keHoachOt.TrangThai != 7)
                     {
                         //Đối tượng áp dụng: 12: Đề xuất kế hoạch OT
                         //Đối tượng áp dụng: 13: Đăng ký OT
                         var DoiTuongApDung = 0;
-                        if (keHoachOt.TrangThai == 1 || keHoachOt.TrangThai == 2 || keHoachOt.TrangThai == 8 || keHoachOt.TrangThai == 10)//đối tượng áp dụng là 12: đề xuất kế hoạch OT
+                        if (keHoachOt.TrangThai == 1 || keHoachOt.TrangThai == 2 || keHoachOt.TrangThai == 8 || keHoachOt.TrangThai == 10) //đối tượng áp dụng là 12: đề xuất kế hoạch OT
                         {
                             DoiTuongApDung = 12;
                         }
-                        else if (keHoachOt.TrangThai == 3 || keHoachOt.TrangThai == 4 || keHoachOt.TrangThai == 5 || keHoachOt.TrangThai == 9 || keHoachOt.TrangThai == 11)// đối tượng áp dụng là 13: đăng ký OT
+                        else if (keHoachOt.TrangThai == 3 || keHoachOt.TrangThai == 4 || keHoachOt.TrangThai == 5 || keHoachOt.TrangThai == 9 || keHoachOt.TrangThai == 11) // đối tượng áp dụng là 13: đăng ký OT
                         {
                             DoiTuongApDung = 13;
                         }
 
-                        var quyTrinh = context.QuyTrinh.FirstOrDefault(x => x.DoiTuongApDung == DoiTuongApDung && x.HoatDong);
-                        var cauHinhQuyTrinh = context.CauHinhQuyTrinh.FirstOrDefault(x => x.QuyTrinhId == quyTrinh.Id);
-                        var listIdCacBuocQuyTrinh = context.CacBuocQuyTrinh
-                            .Where(x => x.CauHinhQuyTrinhId == cauHinhQuyTrinh.Id).Select(y => y.Id).ToList();
-                        var listIdPhongBanTrongCacBuocQuyTrinh = context.PhongBanTrongCacBuocQuyTrinh
-                            .Where(x => listIdCacBuocQuyTrinh.Contains(x.CacBuocQuyTrinhId)).Select(y => y.OrganizationId)
-                            .ToList();
-
                         //Trạng thái đề xuất
                         if (keHoachOt.TrangThai == 1 || keHoachOt.TrangThai == 3) // mới
                         {
-                            if (keHoachOt.CreatedById == user.UserId)
+                            if (keHoachOt.CreatedById == user.UserId || keHoachOt.NguoiDeXuatId == employee.EmployeeId)
                             {
                                 isShowGuiXacNhan = true;
                                 isShowXoa = true;
                                 isShowLuu = true;
-                            }
-                            else if (keHoachOt.NguoiDeXuatId == employee.EmployeeId)
-                            {
-                                isShowGuiXacNhan = true;
-                                isShowXoa = true;
-                                isShowLuu = true;
-                            }
-                            else
-                            {
-                                var phongBanNguoiDangNhap =
-                                    context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == keHoachOt.NguoiDeXuatId);
-
-                                var empCreate = context.User.FirstOrDefault(x => x.UserId == keHoachOt.CreatedById);
-                                var phongBanNguoiTao =
-                                    context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == empCreate.EmployeeId);
-
-                                var phongBanNhanVienBanHang =
-                                    context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == keHoachOt.NguoiDeXuatId);
-
-                                //Trưởng bộ phận
-                                if (phongBanNguoiDangNhap?.IsManager == 1)
-                                {
-                                    if (phongBanNguoiDangNhap?.OrganizationId == phongBanNguoiTao?.OrganizationId ||
-                                        phongBanNguoiDangNhap?.OrganizationId == phongBanNhanVienBanHang?.OrganizationId)
-                                    {
-                                        isShowGuiXacNhan = true;
-                                        isShowXoa = true;
-                                        isShowLuu = true;
-                                    }
-                                }
                             }
                         }
 
@@ -17283,68 +17179,21 @@ namespace TN.TNM.DataAccess.Databases.DAO
                                     isShowTuChoi = true;
                                 }
                             }
-                        }
-
-                        // trang thai cho phe duyet
-                        if (keHoachOt.TrangThai == 2 && user.EmployeeId == keHoachOt.NguoiDeXuatId)
-                        {
-                            var count =
-                                context.CacBuocApDung.Count(x => x.ObjectNumber == keHoachOt.KeHoachOtId &&
-                                                                 x.DoiTuongApDung == DoiTuongApDung && x.TrangThai == 1);
-
-                            if (count == 0)
+                            //Nếu là Phê duyệt trưởng bộ phận cấp trên
+                            else if (buocHienTai?.LoaiPheDuyet == 3)
                             {
-                                isShowHuyYeuCauXacNhan = true;
-                            }
-                        }
+                                //Lấy phòng ban cấp trên của người đề xuất
+                                var _emp = context.Employee.FirstOrDefault(x => x.EmployeeId == user.EmployeeId);
 
-                        if (keHoachOt.TrangThai == 3 || keHoachOt.TrangThai == 1) //Đã Phê duyệt 
-                        {
-                            var phongBanNguoiDangNhap =
-                                    context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == employee.EmployeeId);
+                                var exists = context.PhongBanPheDuyetDoiTuong.FirstOrDefault(x =>
+                                    x.ObjectNumber == keHoachOt.KeHoachOtId && x.DoiTuongApDung == DoiTuongApDung &&
+                                    x.IsPheDuyetCapTren == true && x.OrganizationId == _emp.OrganizationId);
 
-                            var empCreate = context.User.FirstOrDefault(x => x.UserId == keHoachOt.CreatedById);
-                            var phongBanNguoiTao =
-                                context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == empCreate.EmployeeId);
-
-                            var phongBanNhanVienBanHang =
-                                context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == keHoachOt.NguoiDeXuatId);
-
-                            //Trưởng bộ phận
-                            if (phongBanNguoiDangNhap?.IsManager == 1)
-                            {
-                                if (phongBanNguoiDangNhap?.OrganizationId == phongBanNguoiTao?.OrganizationId ||
-                                    phongBanNguoiDangNhap?.OrganizationId == phongBanNhanVienBanHang?.OrganizationId)
+                                //Nếu phòng ban cấp trên của người đang đăng nhập giống trong cấu hình thì
+                                if (exists != null)
                                 {
-                                    isShowHuy = true;
-                                }
-
-                                if (listIdPhongBanTrongCacBuocQuyTrinh.Contains(phongBanNguoiDangNhap.OrganizationId))
-                                {
-                                    isShowHuy = true;
-                                }
-                            }
-                        }
-
-                        if (keHoachOt.TrangThai == 3 || keHoachOt.TrangThai == 1)
-                        {
-                            var phongBanNguoiDangNhap =
-                                context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == employee.EmployeeId);
-
-                            var empCreate = context.User.FirstOrDefault(x => x.UserId == keHoachOt.CreatedById);
-                            var phongBanNguoiTao =
-                                context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == empCreate.EmployeeId.Value);
-
-                            var phongBanNhanVienBanHang =
-                                context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == keHoachOt.NguoiDeXuatId);
-
-                            //Trưởng bộ phận phòng ban người tạo hoặc Trưởng bộ phận phòng ban của nhân viên bán hàng
-                            if (phongBanNguoiDangNhap?.IsManager == 1)
-                            {
-                                if (phongBanNguoiDangNhap?.OrganizationId == phongBanNguoiTao?.OrganizationId ||
-                                    phongBanNguoiDangNhap?.OrganizationId == phongBanNhanVienBanHang?.OrganizationId)
-                                {
-                                    isShowHoanThanh = true;
+                                    isShowXacNhan = true;
+                                    isShowTuChoi = true;
                                 }
                             }
                         }
@@ -17360,7 +17209,6 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         {
                             isShowGuiXacNhan = false;
                             isShowTuChoi = false;
-                            isShowGuiXacNhan = false;
                         }
 
                         if (keHoachOt.TrangThai != 1) // trạng thái khác tạo mới sẽ ẩn nút lưu
@@ -17368,6 +17216,8 @@ namespace TN.TNM.DataAccess.Databases.DAO
                             isShowLuu = false;
                         }
                     }
+
+                    listOTThanhVien = listOTThanhVien.OrderBy(maNV => maNV.EmployeeCode).ToList();
 
                     #region Lấy danh sách file đinh kèm 
 
@@ -18707,6 +18557,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 }
 
                 var listEmployee = new List<EmployeeEntityModel>();
+
                 #region Lấy danh sách nhân viên
                 listEmployee = context.Employee.Where(x => x.Active == true).Select(y =>
                            new EmployeeEntityModel
@@ -18732,44 +18583,55 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     CreatedDate = y.CreatedDate
                 }).OrderByDescending(z => z.CreatedDate).ToList();
 
-
                 #region Phân quyền dữ liệu theo quy trình phê duyệt
+
                 var isAsset = context.Organization.FirstOrDefault(x => x.OrganizationId == employee.OrganizationId)?.IsAccess;
-                //Nếu được xem dự liệu phòng ban khác
+
+                //Nếu không được xem dự liệu phòng ban khác
                 if (isAsset == false)
                 {
-                    var thanhVienPhongBan = context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == employee.EmployeeId);
-                    //Nếu là trưởng bộ phận (IsManager = 1)
-                    if (thanhVienPhongBan.IsManager == 1)
-                    {
-                        //Lấy ra list đối tượng id mà người dùng phụ trách phê duyệt
-                        var listId = context.PhongBanPheDuyetDoiTuong
-                            .Where(x => x.DoiTuongApDung == 30 &&
-                                        x.OrganizationId == thanhVienPhongBan.OrganizationId).Select(y => y.ObjectNumber)
-                            .ToList();
-                        //lấy list nhân viên thuộc phòng ban người đăng nhập 
-                        var listEmpCungOrgNguoiDangNhapId = listEmployee.Where(x => x.OrganizationId == employee.OrganizationId).Select(x => x.EmployeeId).ToList();
+                    var listThanhVienPhongBan =
+                        context.ThanhVienPhongBan.Where(x => x.EmployeeId == employee.EmployeeId).ToList();
 
-                        listDeXuatCongTac = listAllDeXuatCT.Where(x =>
-                          (parameter.MaDeXuat == null || parameter.MaDeXuat == "" || x.MaDeXuat.ToLower().Contains(parameter.MaDeXuat.ToLower())) &&
-                          (parameter.ListEmployee == null || parameter.ListEmployee.Count() == 0 || parameter.ListEmployee.Contains(x.NguoiDeXuatId)) &&
-                          (parameter.TrangThai == null || x.TrangThai == parameter.TrangThai) &&
-                          (  listId.Contains(x.DeXuatCongTacId) //Đề xuất người đăng nhập cần phê duyệt
-                          || x.NguoiDeXuatId == employee.EmployeeId) //Người đăng nhập là người tạo
-                          || ((listEmpCungOrgNguoiDangNhapId.Contains(x.NguoiDeXuatId) && x.TrangThai != 1)// nhân viên cùng Org người đăng nhập và trang thái khác Mới
-                          )).ToList();
-                    }
-                    //Nếu là nhân viên thường (IsManager = 0)
-                    else
+                    var _listDeXuatCongTac = listAllDeXuatCT.Where(x =>
+                        (parameter.MaDeXuat == null || parameter.MaDeXuat == "" || x.MaDeXuat.ToLower().Contains(parameter.MaDeXuat.ToLower())) &&
+                        (parameter.TrangThai == null || x.TrangThai == parameter.TrangThai) &&
+                        x.NguoiDeXuatId == employee.EmployeeId).ToList();
+
+                    listDeXuatCongTac.AddRange(_listDeXuatCongTac);
+
+                    //lấy list nhân viên thuộc phòng ban người đăng nhập 
+                    var listEmpCungOrgNguoiDangNhapId = listEmployee.Where(x => x.OrganizationId == employee.OrganizationId).Select(x => x.EmployeeId).ToList();
+
+                    listThanhVienPhongBan.ForEach(item =>
                     {
-                        listDeXuatCongTac = listAllDeXuatCT.Where(x =>
-                             (parameter.MaDeXuat == null || parameter.MaDeXuat == "" || x.MaDeXuat.ToLower().Contains(parameter.MaDeXuat.ToLower())) &&
-                             (parameter.ListEmployee == null || parameter.ListEmployee.Count() == 0 || parameter.ListEmployee.Contains(x.NguoiDeXuatId)) &&
-                             (parameter.TrangThai == null || x.TrangThai == parameter.TrangThai) &&
-                             x.NguoiDeXuatId == employee.EmployeeId).ToList();
-                    }
+                        //Nếu là trưởng bộ phận (IsManager = 1)
+                        if (item.IsManager == 1)
+                        {
+                            //Lấy ra list đối tượng id mà người dùng phụ trách phê duyệt
+                            var listId = context.PhongBanPheDuyetDoiTuong
+                                .Where(x => x.DoiTuongApDung == 30 &&
+                                            x.OrganizationId == item.OrganizationId).Select(y => y.ObjectNumber)
+                                .ToList();
+
+                            //Lọc ra các Id các bản ghi đã được lấy ở trên
+                            var listIgnoreId = listDeXuatCongTac.Select(y => y.DeXuatCongTacId).ToList();
+
+                            var listDeXuatCongTac_CanPheDuyet = listAllDeXuatCT.Where(x =>
+                                (listIgnoreId.Count == 0 || !listIgnoreId.Contains(x.DeXuatCongTacId)) &&
+                                (parameter.MaDeXuat == null || parameter.MaDeXuat == "" || x.MaDeXuat.ToLower().Contains(parameter.MaDeXuat.ToLower())) &&
+                                (parameter.ListEmployee == null || parameter.ListEmployee.Count() == 0 || parameter.ListEmployee.Contains(x.NguoiDeXuatId)) &&
+                                (parameter.TrangThai == null || x.TrangThai == parameter.TrangThai) &&
+                                listId.Contains(x.DeXuatCongTacId) //Đề xuất người đăng nhập cần phê duyệt
+                                || (listEmpCungOrgNguoiDangNhapId.Contains(x.NguoiDeXuatId) && x.TrangThai != 1) // nhân viên cùng Org người đăng nhập và trang thái khác Mới
+                                ).ToList();
+
+                            listDeXuatCongTac.AddRange(listDeXuatCongTac_CanPheDuyet);
+                        }
+                    });
+                }
                 //Nếu được xem dữ liệu phòng ban khác
-                }else if(isAsset == true)
+                else if (isAsset == true)
                 {
                     listDeXuatCongTac = listAllDeXuatCT.Where(x =>
                         (parameter.MaDeXuat == null || parameter.MaDeXuat == "" || x.MaDeXuat.ToLower().Contains(parameter.MaDeXuat.ToLower())) &&
@@ -18861,6 +18723,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                          TrangThai = y.TrangThai,
                          TrangThaiString = listTrangThai.FirstOrDefault(x => x.Value == y.TrangThai).Name,
                          CreatedById = y.CreatedById,
+                         UpdatedDate = y.UpdatedDate
                      }).FirstOrDefault();
                 if (deXuatCongTac == null)
                 {
@@ -19107,6 +18970,23 @@ namespace TN.TNM.DataAccess.Databases.DAO
                                 isShowTuChoi = true;
                             }
                         }
+                        //Nếu là Phê duyệt trưởng bộ phận cấp trên
+                        else if (buocHienTai?.LoaiPheDuyet == 3)
+                        {
+                            //Lấy phòng ban cấp trên của người đề xuất
+                            var _emp = context.Employee.FirstOrDefault(x => x.EmployeeId == user.EmployeeId);
+
+                            var exists = context.PhongBanPheDuyetDoiTuong.FirstOrDefault(x =>
+                                x.ObjectNumber == deXuatCongTac.DeXuatCongTacId && x.DoiTuongApDung == 30 &&
+                                x.IsPheDuyetCapTren == true && x.OrganizationId == _emp.OrganizationId);
+
+                            //Nếu phòng ban cấp trên của người đang đăng nhập giống trong cấu hình thì
+                            if (exists != null)
+                            {
+                                isShowPheDuyet = true;
+                                isShowTuChoi = true;
+                            }
+                        }
                     }
 
                     //Trạng thái Từ chối
@@ -19338,9 +19218,6 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     DeXuatCongTacId = x.DeXuatCongTacId
                 }).OrderByDescending(x => x.CreatedDate).ToList();
 
-              
-
-
                 var listDeXuatCongTacId = listHoSoCongTac.Select(y => y.DeXuatCongTacId).Distinct().ToList();
                 var listChiTietDeXuatCongTac = context.ChiTietDeXuatCongTac
                     .Where(x => listDeXuatCongTacId.Contains(x.DeXuatCongTacId)).ToList();
@@ -19353,6 +19230,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
 
                 listHoSoCongTac.ForEach(hoSo =>
                 {
+
                     // Danh sách nhân viên tham gia công tác
                     var listEmpId = listChiTietDeXuatCongTac.Where(x => x.DeXuatCongTacId == hoSo.DeXuatCongTacId)
                         .Select(y => y.EmployeeId).ToList();
@@ -19391,6 +19269,13 @@ namespace TN.TNM.DataAccess.Databases.DAO
 
                         // Địa chỉ ngân hàng
                         empDetail.BankAddress = contact?.BankAddress;
+
+                        //tiền tạm ứng
+                        var tamUng = context.DeNghiTamHoanUng.FirstOrDefault(x => x.HoSoCongTacId == hoSo.HoSoCongTacId && x.LoaiDeNghi == 0 && x.TrangThai == 3 && x.Active == true && x.NguoiThuHuongId == empDetail.EmployeeId);
+                        if(tamUng != null)
+                        {
+                            empDetail.tamUng =tamUng.TongTienThanhToan;
+                        }
                     });
 
                     hoSo.ListNhanVienCT = listEmp;
@@ -19482,6 +19367,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
             }
         }
 
+        
         public CreateOrUpdateDeNghiTamHoanUngResult CreateOrUpdateDeNghiTamHoanUng(CreateOrUpdateDeNghiTamHoanUngParameter parameter)
         {
             var folder = context.Folder.FirstOrDefault(x => x.FolderType == parameter.FolderType);
@@ -19649,6 +19535,8 @@ namespace TN.TNM.DataAccess.Databases.DAO
                                 DeNghiTamHoanUngChiTiet chiTiet = new DeNghiTamHoanUngChiTiet();
                                 chiTiet.DeNghiTamHoanUngId = deNghiTamHoanUngId;
                                 chiTiet.NoiDung = item.NoiDung;
+                                chiTiet.SoLuong = item.SoLuong;
+                                chiTiet.DonGia = item.DonGia;
                                 chiTiet.TongTienTruocVat = item.TongTienTruocVat;
                                 chiTiet.Vat = item.Vat;
                                 chiTiet.TienSauVat = item.TienSauVat;
@@ -19962,6 +19850,23 @@ namespace TN.TNM.DataAccess.Databases.DAO
                             isShowTuChoi = true;
                         }
                     }
+                    //Nếu là Phê duyệt trưởng bộ phận cấp trên
+                    else if (buocHienTai?.LoaiPheDuyet == 3)
+                    {
+                        //Lấy phòng ban cấp trên của người đề xuất
+                        var _emp = context.Employee.FirstOrDefault(x => x.EmployeeId == user.EmployeeId);
+
+                        var exists = context.PhongBanPheDuyetDoiTuong.FirstOrDefault(x =>
+                            x.ObjectNumber == deNghi.DeNghiTamHoanUngId && x.DoiTuongApDung == (deNghi.LoaiDeNghi == 0 ? 21 : 22) &&
+                            x.IsPheDuyetCapTren == true && x.OrganizationId == _emp.OrganizationId);
+
+                        //Nếu phòng ban cấp trên của người đang đăng nhập giống trong cấu hình thì
+                        if (exists != null)
+                        {
+                            isShowPheDuyet = true;
+                            isShowTuChoi = true;
+                        }
+                    }
                 }
 
                 //Trạng thái Từ chối
@@ -19975,11 +19880,17 @@ namespace TN.TNM.DataAccess.Databases.DAO
 
                 #endregion
 
+                #region láy thêm dữ liệu thời gian công tác
+                var HoSoCongTac1 = context.HoSoCongTac.FirstOrDefault(x => x.HoSoCongTacId == deNghi.HoSoCongTacId);
+                var deXuatCT = context.DeXuatCongTac.FirstOrDefault(x => x.DeXuatCongTacId == HoSoCongTac1.DeXuatCongTacId);
+                #endregion
+
                 return new GetDataDeNghiDetailFormResult()
                 {
                     Status = true,
                     StatusCode = HttpStatusCode.OK,
                     ListHoSoCongTac = listHoSoCongTac,
+                    HoSoCongTac = deXuatCT,
                     ListHinhThucTT = listPhuongThuc,
                     DeNghiTamHoanUng = deNghi,
                     ListFileInFolder = listFileResult,
@@ -20324,49 +20235,96 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         TongTienThanhToan = y.TongTienThanhToan,
                     }).OrderByDescending(z => z.CreatedDate).ToList();
 
+            //Nếu là hoàn ứng thì tính lại số tiền từ detail
+            if(parameter.LoaiDeNghi == 1)
+            {
+                var listAllDeNghiCTId = listAllDeNghiCT.Select(x => x.DeNghiTamHoanUngId).ToList();
+                var listNoiDungTT = context.DeNghiTamHoanUngChiTiet.Where(x => listAllDeNghiCTId.Contains(x.DeNghiTamHoanUngId)).ToList();
+                listAllDeNghiCT.ForEach(detail =>
+                {
+                    dynamic tongTien = 0;
+                    var noiDung = listNoiDungTT.Where(x => x.DeNghiTamHoanUngId == detail.DeNghiTamHoanUngId).ToList();
+                    noiDung.ForEach(item =>
+                    {
+                        var vat = item.Vat == null ? 0 : item.Vat;
+                        if (vat > 100) vat = 100;
+                        var vanChuyenXm = item.VanChuyenXm == null ? 0 : item.VanChuyenXm;
+                        if (vanChuyenXm > 750000) vanChuyenXm = 750000;
+
+                        var tienDonHnnb = item.TienDonHnnb == null ? 0 : item.TienDonHnnb;
+                        if (tienDonHnnb > 350000) tienDonHnnb = 350000;
+
+                        var tienDonDn = item.TienDonDn == null ? 0 : item.TienDonDn;
+                        if (tienDonDn > 200000) tienDonDn = 200000;
+
+                        var khachSan = item.KhachSan == null ? 0 : item.KhachSan;
+                        if (khachSan > 500000) khachSan = 500000;
+
+                        var chiPhiKhac = item.ChiPhiKhac == null ? 0 : item.ChiPhiKhac;
+
+                        var truocVAT = vanChuyenXm + tienDonHnnb + tienDonDn + khachSan + chiPhiKhac;
+
+                        var tienSauVat = truocVAT * (100 + vat) / 100;
+
+                        tongTien += tienSauVat;
+                    });
+                    detail.TienTamUng = tongTien - detail.TienTamUng;
+                });
+            }
+
             #region Phân quyền dữ liệu theo quy trình phê duyệt
 
-            var thanhVienPhongBan =
-                  context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == employee.EmployeeId);
+            var listThanhVienPhongBan =
+                context.ThanhVienPhongBan.Where(x => x.EmployeeId == employee.EmployeeId).ToList();
 
             var isAccess = context.Organization.FirstOrDefault(x => x.OrganizationId == employee.OrganizationId)?.IsAccess;
+
             //Nếu k được xem dữ liệu phòng ban khác
             if(isAccess != true)
             {
-                //Nếu là trưởng bộ phận (IsManager = 1)
-                if (thanhVienPhongBan.IsManager == 1)
-                {
-                    var doiTuongApDung = parameter.LoaiDeNghi == 1 ? 22 : 21;
-                    //Lấy ra list đối tượng id mà người dùng phụ trách phê duyệt
-                    var listId = context.PhongBanPheDuyetDoiTuong
-                        .Where(x => x.DoiTuongApDung == doiTuongApDung &&
-                                    x.OrganizationId == thanhVienPhongBan.OrganizationId).Select(y => y.ObjectNumber)
-                        .ToList();
+                var _listDeNghi = listAllDeNghiCT.Where(x =>
+                    (parameter.MaDenghi == null || parameter.MaDenghi == "" ||
+                     x.MaDeNghi.ToLower().Contains(parameter.MaDenghi.ToLower().Trim())) &&
+                    (parameter.ListEmployee == null || parameter.ListEmployee.Count() == 0 ||
+                     parameter.ListEmployee.Contains(x.NguoiDeXuatId.Value)) &&
+                    (parameter.TrangThai == null || x.TrangThai == parameter.TrangThai) &&
+                    x.NguoiDeXuatId == employee.EmployeeId).ToList();
 
-                    var listEmpIdCungOrg = listEmployee.Where(x => x.OrganizationId == employee.OrganizationId).Select(x => x.EmployeeId).ToList();
+                listDeNghi.AddRange(_listDeNghi);
 
-                    listDeNghi = listAllDeNghiCT.Where(x =>
-                     (parameter.MaDenghi == null || parameter.MaDenghi == "" ||
-                      x.MaDeNghi.ToLower().Contains(parameter.MaDenghi.ToLower().Trim())) &&
-                     (parameter.ListEmployee == null || parameter.ListEmployee.Count() == 0 ||
-                      parameter.ListEmployee.Contains(x.NguoiDeXuatId.Value)) &&
-                     (parameter.TrangThai == null || x.TrangThai == parameter.TrangThai) &&
-                     (listId.Contains(x.DeNghiTamHoanUngId)  // cần phê duyệt
-                     || x.NguoiDeXuatId == employee.EmployeeId // người đăng nhập tạo
-                     || (listEmpIdCungOrg.Contains(x.NguoiDeXuatId) && x.TrangThai != 1) // cùng emp cùng phòng ban
-                     )).ToList();
-                }
-                //Nếu là nhân viên thường (IsManager = 0)
-                else
+                listThanhVienPhongBan.ForEach(item =>
                 {
-                    listDeNghi = listAllDeNghiCT.Where(x =>
-                     (parameter.MaDenghi == null || parameter.MaDenghi == "" ||
-                      x.MaDeNghi.ToLower().Contains(parameter.MaDenghi.ToLower().Trim())) &&
-                     (parameter.ListEmployee == null || parameter.ListEmployee.Count() == 0 ||
-                      parameter.ListEmployee.Contains(x.NguoiDeXuatId.Value)) &&
-                     (parameter.TrangThai == null || x.TrangThai == parameter.TrangThai) &&
-                     x.NguoiDeXuatId == employee.EmployeeId).ToList();
-                }
+                    //Nếu là trưởng bộ phận (IsManager = 1)
+                    if (item.IsManager == 1)
+                    {
+                        var doiTuongApDung = parameter.LoaiDeNghi == 1 ? 22 : 21;
+
+                        //Lấy ra list đối tượng id mà người dùng phụ trách phê duyệt
+                        var listId = context.PhongBanPheDuyetDoiTuong
+                            .Where(x => x.DoiTuongApDung == doiTuongApDung &&
+                                        x.OrganizationId == item.OrganizationId).Select(y => y.ObjectNumber)
+                            .ToList();
+
+                        //Lọc ra các Id các bản ghi đã được lấy ở trên
+                        var listIgnoreId = listDeNghi.Select(y => y.DeNghiTamHoanUngId).ToList();
+
+                        var listEmpIdCungOrg = listEmployee.Where(x => x.OrganizationId == employee.OrganizationId)
+                            .Select(x => x.EmployeeId).ToList();
+
+                        var listDeNghi_CanPheDuyet = listAllDeNghiCT.Where(x =>
+                            (listIgnoreId.Count == 0 || !listIgnoreId.Contains(x.DeNghiTamHoanUngId)) &&
+                            (parameter.MaDenghi == null || parameter.MaDenghi == "" ||
+                             x.MaDeNghi.ToLower().Contains(parameter.MaDenghi.ToLower().Trim())) &&
+                            (parameter.ListEmployee == null || parameter.ListEmployee.Count() == 0 ||
+                             parameter.ListEmployee.Contains(x.NguoiDeXuatId.Value)) &&
+                            (parameter.TrangThai == null || x.TrangThai == parameter.TrangThai) &&
+                            (listId.Contains(x.DeNghiTamHoanUngId)  // cần phê duyệt
+                             || (listEmpIdCungOrg.Contains(x.NguoiDeXuatId) && x.TrangThai != 1) // cùng emp cùng phòng ban
+                            )).ToList();
+
+                        listDeNghi.AddRange(listDeNghi_CanPheDuyet);
+                    }
+                });
             }
             else
             {
@@ -23564,14 +23522,9 @@ namespace TN.TNM.DataAccess.Databases.DAO
             }
         }
 
-        private void UpdateTrangThaiKeHoachOt(KeHoachOt keHoachOtCheck, List<KeHoachOtPhongBan> listKeHoachOtPhongBan,
-            List<CacBuocApDung> listCacBuocApDung, QuyTrinh quyTrinhDangKyOT, CauHinhQuyTrinh cauHinhQuyTrinhDangKyOT,
-            CacBuocQuyTrinh buoc1, Guid UserId,
-            out bool isContinue, out List<CacBuocApDung> listNewCacBuocApDung, out List<Note> listNewNote)
+        private void UpdateTrangThaiKeHoachOt(KeHoachOt keHoachOtCheck, List<KeHoachOtPhongBan> listKeHoachOtPhongBan, out bool isContinue)
         {
             isContinue = false;
-            listNewCacBuocApDung = new List<CacBuocApDung>();
-            listNewNote = new List<Note>();
 
             var tuNgay = keHoachOtCheck.NgayBatDau.Value.Date.Add(keHoachOtCheck.GioBatDau.Value);
             var denNgay = keHoachOtCheck.NgayKetThuc.Value.Date.Add(keHoachOtCheck.GioKetThuc.Value);
@@ -23593,50 +23546,21 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 keHoachOtCheck.TrangThai = 4;
                 context.KeHoachOt.Update(keHoachOtCheck);
 
+                var _params = new GuiPheDuyetParameter
+                {
+                    UserId = keHoachOtCheck.CreatedById.Value,
+                    ObjectId = Guid.Empty,
+                    DoiTuongApDung = 13,
+                    ObjectNumber = keHoachOtCheck.KeHoachOtId
+                };
+
+                iQuyTrinhDataAccess.GuiPheDuyet(_params);
+
                 //Chuyển các phòng ban của kế hoạch về trạng thái chờ phê duyệt: 2
                 var listUpdateStatuPhongBanOT = listKeHoachOtPhongBan
                     .Where(x => x.KeHoachOtId == keHoachOtCheck.KeHoachOtId).ToList();
                 listUpdateStatuPhongBanOT.ForEach(item => { item.TrangThai = 2; });
                 context.KeHoachOtPhongBan.UpdateRange(listUpdateStatuPhongBanOT);
-
-                int count;
-                //Áp dụng cho id là kiểu int
-                count = listCacBuocApDung.Count(x => x.ObjectNumber == keHoachOtCheck.KeHoachOtId &&
-                                                         x.DoiTuongApDung == 13);
-                if (count == 0)
-                {
-                    #region Đăng ký quy trình
-
-                    var cacBuocApDung = new CacBuocApDung();
-                    cacBuocApDung.Id = Guid.NewGuid();
-                    cacBuocApDung.ObjectId = Guid.Empty;
-                    cacBuocApDung.DoiTuongApDung = 13;
-                    cacBuocApDung.QuyTrinhId = quyTrinhDangKyOT.Id;
-                    cacBuocApDung.CauHinhQuyTrinhId = cauHinhQuyTrinhDangKyOT.Id;
-                    cacBuocApDung.CacBuocQuyTrinhId = buoc1.Id;
-                    cacBuocApDung.Stt = buoc1.Stt;
-                    cacBuocApDung.LoaiPheDuyet = buoc1.LoaiPheDuyet;
-                    cacBuocApDung.TrangThai = 0;
-                    cacBuocApDung.ObjectNumber = keHoachOtCheck.KeHoachOtId;
-
-                    //Thêm ghi chú
-                    Note note = new Note();
-                    note.NoteId = Guid.NewGuid();
-                    note.ObjectId = Guid.Empty;
-                    note.ObjectType = "DKOT";
-                    note.Type = "ADD";
-                    note.Active = true;
-                    note.CreatedById = UserId;
-                    note.CreatedDate = DateTime.Now;
-                    note.NoteTitle = "Đã thêm ghi chú";
-                    note.ObjectNumber = keHoachOtCheck.KeHoachOtId;
-                    note.Description = "Đã gửi phê duyệt thành công";
-
-                    listNewCacBuocApDung.Add(cacBuocApDung);
-                    listNewNote.Add(note);
-
-                    #endregion
-                }
             }
 
             //Nếu kế hoạch có trạng thái Chờ phê duyệt đăng ký (4) và đã hết hạn Phê duyệt đăng ký OT thì
@@ -24641,6 +24565,8 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     chiTiet.NoiDung = item.NoiDung;
                     chiTiet.TongTienTruocVat = item.TongTienTruocVat;
                     chiTiet.Vat = item.Vat;
+                    chiTiet.DonGia = item.DonGia;
+                    chiTiet.SoLuong = item.SoLuong;
                     chiTiet.TienSauVat = item.TienSauVat;
                     chiTiet.ParentId = parentId;
                     chiTiet.Level = currentLevel;
@@ -24696,6 +24622,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
             var listAllUser = context.User.ToList();
 
             var empExistCount = 0;
+
             var listEmp = new List<Employee>();
             try
             {
@@ -24773,6 +24700,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                                 thanhVienPhongBan.Id = Guid.NewGuid();
                                 thanhVienPhongBan.EmployeeId = emp.EmployeeId;
                                 thanhVienPhongBan.OrganizationId = item.OrganizationId.Value;
+                                thanhVienPhongBan.IsPhongBanChinh = true;
                                 listThanhVienPhongBan.Add(thanhVienPhongBan);
                                 context.ThanhVienPhongBan.AddRange(listThanhVienPhongBan);
                                 emp.OrganizationId = item.OrganizationId.Value;
@@ -24814,6 +24742,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                             contact.WorkEmail = item.Username + "@loft3di.com.vn";
 
                             var user = new User();
+                            user.UserId = Guid.NewGuid();
                             user.EmployeeId = emp.EmployeeId;
                             user.UserName = newUserName;
                             user.Password = AuthUtil.GetHashingPassword(passDefault);
@@ -24821,6 +24750,13 @@ namespace TN.TNM.DataAccess.Databases.DAO
                             user.Active = true;
                             user.CreatedById = parameter.UserId;
 
+                            //Thêm quyền cho nhân viên import
+                            var newRole = new UserRole();
+                            newRole.UserRoleId = Guid.NewGuid();
+                            newRole.UserId = user.UserId;
+                            newRole.RoleId = new Guid("BFF390CE-1167-46D8-B9E9-5847DDDC1A55");
+                            context.UserRole.Add(newRole);
+                         
                             context.Employee.Add(emp);
                             context.Contact.Add(contact);
                             context.User.Add(user);
@@ -25058,11 +24994,11 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 //Lấy các loại hợp đồng lao động. Trong code có HĐLĐ
                 var dataThongKeNhanSuSapHetHanThuViec = new List<DataPieChartModel>();
 
-                var listLoaiHDDTId = listAllCategory.Where(x => x.CategoryTypeId == categoryTypeHDLDId && x.CategoryCode.StartsWith("HĐĐT"))
+                var listLoaiHDDTId = listAllCategory.Where(x => x.CategoryTypeId == categoryTypeHDLDId && x.CategoryCode.StartsWith("HĐTV"))
                                     .Select(x => x.CategoryId).ToList();
 
-                var hDDT1ThangId = listAllCategory.FirstOrDefault(x => x.CategoryTypeId == categoryTypeHDLDId && x.CategoryCode == "HĐĐT1");
-                var hDDT2ThangId = listAllCategory.FirstOrDefault(x => x.CategoryTypeId == categoryTypeHDLDId && x.CategoryCode == "HĐĐT2");
+                var hDDT1ThangId = listAllCategory.FirstOrDefault(x => x.CategoryTypeId == categoryTypeHDLDId && x.CategoryCode == "HĐTV1");
+                var hDDT2ThangId = listAllCategory.FirstOrDefault(x => x.CategoryTypeId == categoryTypeHDLDId && x.CategoryCode == "HĐTV2");
 
 
                 //Thử việc 1 tháng báo trước 5 ngày. thử việc 2 tháng báo trước 10 ngày
@@ -25970,11 +25906,11 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     //Lấy các loại hợp đồng lao động. Trong code có HĐLĐ
                     var dataThongKeNhanSuSapHetHanThuViec = new List<DataPieChartModel>();
 
-                    var listLoaiHDDTId = listAllCategory.Where(x => x.CategoryTypeId == categoryTypeHDLDId && x.CategoryCode.StartsWith("HĐĐT"))
+                    var listLoaiHDDTId = listAllCategory.Where(x => x.CategoryTypeId == categoryTypeHDLDId && x.CategoryCode.StartsWith("HĐTV"))
                                         .Select(x => x.CategoryId).ToList();
 
-                    var hDDT1ThangId = listAllCategory.FirstOrDefault(x => x.CategoryTypeId == categoryTypeHDLDId && x.CategoryCode == "HĐĐT1");
-                    var hDDT2ThangId = listAllCategory.FirstOrDefault(x => x.CategoryTypeId == categoryTypeHDLDId && x.CategoryCode == "HĐĐT2");
+                    var hDDT1ThangId = listAllCategory.FirstOrDefault(x => x.CategoryTypeId == categoryTypeHDLDId && x.CategoryCode == "HĐTV1");
+                    var hDDT2ThangId = listAllCategory.FirstOrDefault(x => x.CategoryTypeId == categoryTypeHDLDId && x.CategoryCode == "HĐTV2");
 
                     //Thử việc 1 tháng báo trước 5 ngày. thử việc 2 tháng báo trước 10 ngày
                     var listEmpSapHetHanThuViecId = listHopDongNhanSu.Where(x => x.NgayKetThucHopDong != null && x.Active == true
@@ -26286,6 +26222,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     listEmp = listEmp.Where(x => x.TrangThaiId == 1).ToList(); // đang hoạc động và được truy cập
                 }
 
+
                 //Đang đánh giá
                 if (parameter.TrangThai == 2 || parameter.TrangThai == 3 || parameter.TrangThai == 4)
                 {
@@ -26371,6 +26308,8 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     
                         item.NguoiDuocDanhGiaName = nguoiDuocDanhGia?.EmployeeCode + " - " + nguoiDuocDanhGia?.EmployeeName;
 
+                        item.EmployeeCode = nguoiDuocDanhGia?.EmployeeCode;
+
                         var chucVu = listAllPos.FirstOrDefault(y => y.PositionId == nguoiDuocDanhGia.PositionId);
                         item.ChucVu = chucVu?.PositionName;
                         item.PositionId = chucVu?.PositionId;
@@ -26447,8 +26386,10 @@ namespace TN.TNM.DataAccess.Databases.DAO
                                                                             x.NguoiDuocDanhGiaId == Guid.Empty &&
                                                                             x.NguoiDuocDanhGiaId == Guid.Empty).QuyLuong; // không phải phòng ban
                     quyLuongConLai = quyLuongPhongBan - tongMucTangQuanLy;
-
                 }
+                listEmp = listEmp.OrderBy(x => x.EmployeeCode).ToList();
+                listNhanVienKyDanhGia = listNhanVienKyDanhGia.OrderBy(x => x.EmployeeCode).ToList();
+
                 return new LayNhanVienCungCapVaCapDuoiOrgResult()
                 {
                     IsTruongPhong = isTruongPhong,
@@ -26565,15 +26506,24 @@ namespace TN.TNM.DataAccess.Databases.DAO
             {
                 string rootFolder = hostingEnvironment.WebRootPath + "\\ExcelTemplate";
                 string fileName = @"Template_Import_HopDongNhanSu.xlsx";
-
+                // 1: Hợp đồng
+                // 2: Gia đình
+                if (parameter.Number == 1)
+                {
+                    fileName = @"Template_Import_HopDongNhanSu.xlsx";
+                }
+                else
+                {
+                    fileName = @"Template_Import_GiaDinh.xlsx";
+                }
                 string newFilePath = Path.Combine(rootFolder, fileName);
                 byte[] data = File.ReadAllBytes(newFilePath);
 
                 return new DownloadTemplateImportHDNSResult
                 {
                     TemplateExcel = data,
-                    Message = string.Format("Đã dowload file Template_Import_HopDongNhanSu"),
-                    FileName = "Template_Import_HopDongNhanSu",
+                    Message = string.Format("Đã dowload file!"),
+                    FileName = parameter.Number == 1 ? "Template_Import_HopDongNhanSu" : "Template_Import_GiaDinh",
                     StatusCode = HttpStatusCode.OK
                 };
             }
@@ -26601,12 +26551,22 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         CategoryName = x.CategoryName
                     }).ToList();
                 var listChucVu = context.Position.ToList();
+
+                var quanHeGiaDinhCateTypeId = context.CategoryType.FirstOrDefault(x => x.CategoryTypeCode == "QHGD").CategoryTypeId;
+                var listQuanHe = context.Category.Where(x => x.CategoryTypeId == quanHeGiaDinhCateTypeId).Select(
+                  x => new CategoryEntityModel
+                  {
+                      CategoryId = x.CategoryId,
+                      CategoryName = x.CategoryName
+                  }).ToList();
+
                 return new GetMasterDateImportHDNSResult
                 {
                     ListEmployeeCode = listEmployeeCode,
                     ListHopDong = listHopDong,
                     ListChucVu = listChucVu,
                     ListLoaiHopDong = listLoaiHopDong,
+                    ListQuanHe = listQuanHe,
                     Message = "Đã có lỗi xảy ra trong quá trình download",
                     StatusCode = HttpStatusCode.OK
                 };
@@ -26649,7 +26609,7 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         var listAllHSNS = listAllHopDongNhanSu.FindAll(x => x.EmployeeId == employee.EmployeeId).ToList();
 
                         //Check exist in DB
-                        var existSoPhuLuc = listAllHSNS.Where(x => x.SoPhuLuc.ToUpper().Trim() == item.SoPhuLuc.ToUpper().Trim()).ToList();
+                        //var existSoPhuLuc = listAllHSNS.Where(x => x.SoPhuLuc.ToUpper().Trim() == item.SoPhuLuc.ToUpper().Trim()).ToList();
                         var existSoHD = listAllHSNS.Where(x => x.SoHopDong.ToUpper().Trim() == item.SoHopDong.ToUpper().Trim()).ToList();
                         //Ngày ký hợp đồng không được trùng với ngày ký hợp đồng đã tạo
                         var existNgayKyHD = listAllHSNS.Count(x => x.NgayKyHopDong.Date == item.NgayKyHopDong.Date);
@@ -26672,16 +26632,15 @@ namespace TN.TNM.DataAccess.Databases.DAO
                                     isGiaoNhau = true;
                                 }
                             });
+                        
+                           
+                                if (hopDongGanNhat != null &&
+                                    item.NgayKyHopDong.Date <= hopDongGanNhat.NgayKetThucHopDong.Value.Date)
+                                {
+                                    isGiaoNhau = true;
+                                }
+                           
                         }
-                        else
-                        {
-                            if (hopDongGanNhat != null &&
-                                item.NgayKyHopDong.Date <= hopDongGanNhat.NgayKetThucHopDong.Value.Date)
-                            {
-                                isGiaoNhau = true;
-                            }
-                        }
-
                         if (hopDongGanNhat != null && hopDongGanNhat.NgayKetThucHopDong == null)
                         {
                                 isCapNhatNgayKeThucGanNhat = true;
@@ -26694,10 +26653,10 @@ namespace TN.TNM.DataAccess.Databases.DAO
                         {
                             empSoHDCount++;
                         }
-                        else if (existSoPhuLuc.Count() > 0 )
-                        {
-                            empSoPhuLucCount++;
-                        }
+                        //else if (existSoPhuLuc.Count() > 0 )
+                        //{
+                        //    empSoPhuLucCount++;
+                        //}
                         else if (existNgayKyHD > 0)
                         {
                             empNgayKyHopDongCount++;
@@ -26772,15 +26731,15 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     };
                 };
 
-                if (empSoPhuLucCount > 0)
-                {
-                    transaction.Rollback();
-                    return new ImportHDNSResult
-                    {
-                        StatusCode = System.Net.HttpStatusCode.ExpectationFailed,
-                        Message = "Số phụ lục bị trùng!",
-                    };
-                }
+                //if (empSoPhuLucCount > 0)
+                //{
+                //    transaction.Rollback();
+                //    return new ImportHDNSResult
+                //    {
+                //        StatusCode = System.Net.HttpStatusCode.ExpectationFailed,
+                //        Message = "Số phụ lục bị trùng!",
+                //    };
+                //}
 
                 if (empSoHDCount > 0)
                 {
@@ -26840,5 +26799,267 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 };
             }
         }
+
+        public ChangeNgayNopTaiLieuResult ChangeNgayNopTaiLieu(ChangeNgayNopTaiLieuParameter parameter)
+        {
+            try
+            {
+                var emp = context.Employee.FirstOrDefault(x => x.EmployeeId == parameter.EmployeeId);
+                if (emp == null)
+                {
+                    return new ChangeNgayNopTaiLieuResult()
+                    {
+                        StatusCode = HttpStatusCode.NotFound,
+                        MessageCode = "Nhân viên không tồn tại trên hệ thống",
+                    };
+                }
+
+                emp.NgayNop = parameter.NgayNop;
+                emp.NgayHenNop = parameter.NgayHenNop;
+
+                context.Employee.Update(emp);
+                context.SaveChanges();
+
+                return new ChangeNgayNopTaiLieuResult()
+                {
+                    StatusCode = HttpStatusCode.OK,
+                    MessageCode = "Lưu thành công",
+                };
+            }
+            catch (Exception e)
+            {
+                return new ChangeNgayNopTaiLieuResult()
+                {
+                    StatusCode = HttpStatusCode.InternalServerError,
+                    MessageCode = e.Message,
+                };
+            }
+        }
+
+        public ChangeDaNopResult ChangeDaNop(ChangeDaNopParameter parameter)
+        {
+            try
+            {
+                var emp = context.Employee.FirstOrDefault(x => x.EmployeeId == parameter.EmployeeId);
+                if (emp == null)
+                {
+                    return new ChangeDaNopResult()
+                    {
+                        StatusCode = HttpStatusCode.NotFound,
+                        MessageCode = "Nhân viên không tồn tại trên hệ thống",
+                    };
+                }
+
+                //Create
+                if (parameter.TaiLieuNhanVienId == null || parameter.TaiLieuNhanVienId == 0)
+                {
+                    var taiLieuNhanVien = new TaiLieuNhanVien
+                    {
+                        EmployeeId = emp.EmployeeId,
+                        Active = true,
+                        CreatedById = parameter.UserId,
+                        CreatedDate = DateTime.Now,
+                        CauHinhChecklistId = parameter.CauHinhChecklistId,
+                        IsDaNop = parameter.IsDaNop
+                    };
+
+                    context.TaiLieuNhanVien.Add(taiLieuNhanVien);
+                }
+                //Update
+                else
+                {
+                    var exists =
+                        context.TaiLieuNhanVien.FirstOrDefault(x => x.TaiLieuNhanVienId == parameter.TaiLieuNhanVienId);
+
+                    if (exists == null)
+                    {
+                        return new ChangeDaNopResult()
+                        {
+                            StatusCode = HttpStatusCode.NotFound,
+                            MessageCode = "Tài liệu này của nhân viên không tồn tại trên hệ thống",
+                        };
+                    }
+
+                    exists.IsDaNop = parameter.IsDaNop;
+                    context.TaiLieuNhanVien.Update(exists);
+                }
+
+                context.SaveChanges();
+
+                return new ChangeDaNopResult()
+                {
+                    StatusCode = HttpStatusCode.OK,
+                    MessageCode = "Lưu thành công",
+                };
+            }
+            catch (Exception e)
+            {
+                return new ChangeDaNopResult()
+                {
+                    StatusCode = HttpStatusCode.InternalServerError,
+                    MessageCode = e.Message,
+                };
+            }
+        }
+
+        public ImportThongTinGiaDinhResult ImportThongTinGiaDinh(ImportThongTinGiaDinhParameter parameter)
+        {
+            using (var transaction = context.Database.BeginTransaction())
+            {
+                try
+                {
+                    var coutErr = 0;
+                    var listAllEmp = context.Employee.Where(x => x.Active == true).ToList();
+
+                    parameter.ThongTinGiaDinh.ForEach(thongTinGiaDinh =>
+                    {
+                        var emp = listAllEmp.FirstOrDefault(x => x.EmployeeCode.ToLower().Trim() == thongTinGiaDinh.EmployeeCode.ToLower().Trim());
+                        if(emp == null)
+                        {
+                            coutErr++;
+                        }
+
+                        if(emp != null)
+                        {
+                            var fullName = thongTinGiaDinh.FullName.Trim();
+                            var listName = fullName.Split(" ");
+                            string firstName = "";
+                            string lastName = "";
+
+                            //Trim các từ
+                            for (var i = 0; i < listName.Length; i++)
+                            {
+                                listName[i] = listName[i].Trim();
+                            }
+
+                            firstName = listName[0];
+
+                            //Nếu tên có nhiều hơn 1 từ
+                            if (listName.Length > 1)
+                            {
+
+                                var listLastName = listName.Where(x => x != listName[0]).ToArray();
+                                lastName = String.Join(" ", listLastName);
+                            }
+
+                            var mess = "";
+                            //Tạo mới thành viên gia đình
+                            var newThanhVien = new Contact();
+                            newThanhVien.ContactId = Guid.NewGuid();
+                            newThanhVien.ObjectId = emp.EmployeeId;
+                            newThanhVien.ObjectType = ContactObjectType.EMP_CON;
+                            newThanhVien.FirstName = firstName;
+                            newThanhVien.LastName = lastName;
+                            newThanhVien.Phone = thongTinGiaDinh.Phone;
+                            newThanhVien.DateOfBirth = thongTinGiaDinh.DateOfBirth;
+                            newThanhVien.Email = thongTinGiaDinh.Email;
+                            newThanhVien.QuanHeId = thongTinGiaDinh.QuanHeId;
+                            newThanhVien.CreatedById = parameter.UserId;
+                            newThanhVien.CreatedDate = DateTime.Now;
+                            newThanhVien.Active = true;
+                            newThanhVien.PhuThuoc = thongTinGiaDinh.PhuThuoc;
+                            newThanhVien.PhuThuocTuNgay = thongTinGiaDinh.PhuThuocTuNgay;
+                            newThanhVien.PhuThuocDenNgay = thongTinGiaDinh.PhuThuocDenNgay;
+                            context.Contact.Add(newThanhVien);
+                            mess = "Thêm mới thành công";
+                        }
+                    });
+                    if(coutErr > 0)
+                    {
+                        transaction.Rollback();
+                        return new ImportThongTinGiaDinhResult()
+                        {
+                            MessageCode = "Không tìm thấy thông tin nhân viên trên hệ thống!",
+                            StatusCode = HttpStatusCode.ExpectationFailed,
+                        };
+                    }
+                    context.SaveChanges();
+                    transaction.Commit();
+                    return new ImportThongTinGiaDinhResult()
+                    {
+                        MessageCode = "Thêm mới thành công",
+                        StatusCode = HttpStatusCode.OK,
+                    };
+
+                }
+                catch (Exception e)
+                {
+                    transaction.Rollback();
+                    return new ImportThongTinGiaDinhResult()
+                    {
+                        MessageCode = e.Message,
+                        StatusCode = System.Net.HttpStatusCode.ExpectationFailed,
+                    };
+                }
+            }
+        }
+
+        public CheckPhongBanTaoKyDanhGiaResult CheckPhongBanTaoKyDanhGia(CheckPhongBanTaoKyDanhGiaParameter parameter)
+        {
+                try
+                {
+                    //Tạo mới => kiểm tra xem phòng ban mới thêm có con hoặc là con của phòng ban đã được chọn hay không.
+                    var phongBanInfor = context.Organization.FirstOrDefault(x => x.OrganizationId == parameter.OrgAddId);
+
+                    //Lấy list phòng ban con của phòng
+                    List<Guid?> listGetAllChild = new List<Guid?>();    //List phòng ban: chính nó và các phòng ban cấp dưới của nó
+                    listGetAllChild = getOrganizationChildrenId(parameter.OrgAddId, listGetAllChild);
+
+                    //Lấy listPhong ban cấp trên của phòng
+                    List<Guid?> listGetAllParent = new List<Guid?>();    //List phòng ban: chính nó và các phòng ban cấp trên của nó
+                    listGetAllParent = getOrganizationParentId(phongBanInfor.ParentId, listGetAllParent);
+                 
+                    var check1 = false;
+                    var check2 = false;
+                    parameter.ListOrgId.ForEach(item =>
+                    {
+                        if (listGetAllChild.Contains(item))
+                        {
+                            check1 = true;
+                        }
+                        if (listGetAllParent.Contains(item))
+                        {
+                            check2 = true;
+                        }
+                    });
+
+                    if (check1 == true)
+                    {
+                        return new CheckPhongBanTaoKyDanhGiaResult()
+                        {
+                            Message = "Phòng ban đang chọn hiện đã có phòng ban cấp dưới tham gia!",
+                            StatusCode = HttpStatusCode.ExpectationFailed,
+                        };
+                    }
+
+                    if (check2 == true)
+                    {
+                        return new CheckPhongBanTaoKyDanhGiaResult()
+                        {
+                            Message = "Phòng ban đang chọn hiện đã có phòng ban cấp trên tham gia!",
+                            StatusCode = HttpStatusCode.ExpectationFailed,
+                        };
+                    }
+
+                   
+                    return new CheckPhongBanTaoKyDanhGiaResult
+                    {
+                        StatusCode = HttpStatusCode.OK,
+                        Message = ""
+                    };
+                }
+                catch (Exception e)
+                {
+                    return new CheckPhongBanTaoKyDanhGiaResult()
+                    {
+                        StatusCode = HttpStatusCode.Forbidden,
+                        Message = e.Message
+                    };
+                }
+            
+        }
+
+
+
     }
 }

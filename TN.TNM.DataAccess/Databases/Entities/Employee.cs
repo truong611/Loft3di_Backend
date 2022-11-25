@@ -84,6 +84,9 @@ namespace TN.TNM.DataAccess.Databases.Entities
         public string KinhNghiemLamViec { get; set; }
         public decimal? SoNgayDaNghiPhep { get; set; }
         public decimal? SoNgayPhepConLai { get; set; }
+        public DateTime? NgayNop { get; set; }
+        public DateTime? NgayHenNop { get; set; }
+
 
         public Organization Organization { get; set; }
         public ICollection<EmployeeAllowance> EmployeeAllowance { get; set; }

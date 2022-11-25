@@ -7,6 +7,8 @@ namespace TN.TNM.DataAccess.Messages.Results.Employee
 {
     public class GetListTaiLieuNhanVienResult : BaseResult
     {
+        public DateTime? NgayNop { get; set; }
+        public DateTime? NgayHenNop { get; set; }
         public List<TaiLieuNhanVienEntityModel> ListTaiLieu { get; set; }
         public bool IsShowButtonTuChoi { get; set; }
         public bool IsShowButtonXacNhan { get; set; }

@@ -9,6 +9,7 @@ namespace TN.TNM.DataAccess.Models.QuyTrinh
         public Guid? Id { get; set; }
         public decimal SoTienTu { get; set; }
         public string TenCauHinh { get; set; }
+        public int LoaiCauHinh { get; set; }
         public string QuyTrinh { get; set; }
         public Guid? QuyTrinhId { get; set; }
         public List<CacBuocQuyTrinhModel> ListCacBuocQuyTrinh { get; set; }

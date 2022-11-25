@@ -28,5 +28,7 @@ namespace TN.TNM.DataAccess.Databases.Entities
         public DateTime? UpdatedDate { get; set; }
         public Guid? TenantId { get; set; }
         public int Level { get; set; }
+        public decimal DonGia { get; set; }
+        public decimal SoLuong { get; set; }
     }
 }

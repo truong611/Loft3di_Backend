@@ -1730,6 +1730,38 @@ namespace TN.TNM.Api.Controllers
             return this._iEmployeeDataAccess.ImportHDNS(request);
         }
 
+        [HttpPost]
+        [Route("api/employee/changeNgayNopTaiLieu")]
+        [Authorize(Policy = "Member")]
+        public ChangeNgayNopTaiLieuResult ChangeNgayNopTaiLieu([FromBody] ChangeNgayNopTaiLieuParameter request)
+        {
+            return this._iEmployeeDataAccess.ChangeNgayNopTaiLieu(request);
+        }
+
+        [HttpPost]
+        [Route("api/employee/changeDaNop")]
+        [Authorize(Policy = "Member")]
+        public ChangeDaNopResult ChangeDaNop([FromBody] ChangeDaNopParameter request)
+        {
+            return this._iEmployeeDataAccess.ChangeDaNop(request);
+        }
+
+        [HttpPost]
+        [Route("api/employee/importThongTinGiaDinh")]
+        [Authorize(Policy = "Member")]
+        public ImportThongTinGiaDinhResult ImportThongTinGiaDinh([FromBody] ImportThongTinGiaDinhParameter request)
+        {
+            return this._iEmployeeDataAccess.ImportThongTinGiaDinh(request);
+        }
+
+        [HttpPost]
+        [Route("api/employee/checkPhongBanTaoKyDanhGia")]
+        [Authorize(Policy = "Member")]
+        public CheckPhongBanTaoKyDanhGiaResult CheckPhongBanTaoKyDanhGia([FromBody] CheckPhongBanTaoKyDanhGiaParameter request)
+        {
+            return this._iEmployeeDataAccess.CheckPhongBanTaoKyDanhGia(request);
+        }
+
     }
 }
 

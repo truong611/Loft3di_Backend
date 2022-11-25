@@ -1258,6 +1258,14 @@ namespace TN.TNM.DataAccess.Databases.DAO
         {
             try
             {
+                if(parameter.RoleId == new Guid("BFF390CE-1167-46D8-B9E9-5847DDDC1A55"))
+                {
+                    return new DeleteRoleResult
+                    {
+                        StatusCode = HttpStatusCode.ExpectationFailed,
+                        MessageCode = "Nhóm quyền này mặc định. Không thể thực hiện thao tác xóa!"
+                    };
+                }
                 //Delete Role
                 var role = context.Role.FirstOrDefault(e => e.RoleId == parameter.RoleId);
                 if (role == null)

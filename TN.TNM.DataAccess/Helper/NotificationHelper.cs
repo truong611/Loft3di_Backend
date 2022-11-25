@@ -8753,6 +8753,9 @@ namespace TN.TNM.DataAccess.Helper
 
             #endregion
 
+            //Tạm hoàn ứng dùng chung
+            const string TongTienTamHoanUng = "[TOTALCOST]";
+
             #region Đề xuất tạm ứng
 
             const string TenDeXuatTamUng = "[DXTU_NAMECODE]";
@@ -14921,6 +14924,12 @@ namespace TN.TNM.DataAccess.Helper
                         }
                     }
 
+                    //Thêm tổng tiền đề xuất
+                    if (result.Contains(TongTienTamHoanUng))
+                    {
+                        result = result.Replace(TongTienTamHoanUng, String.Format("{0:#,##0.##}", _model.TongTienThanhToan));
+                    }
+
                 }
             }
             // Chi tiết đề xuất hoàn ứng
@@ -15005,6 +15014,39 @@ namespace TN.TNM.DataAccess.Helper
                             result = result.Replace(LyDoTuChoi, "");
                         }
                     }
+
+                    var soTien = _model.TongTienThanhToan - _model.TienTamUng;
+                    var token1 = "[IF1]";
+                    var token2 = "[/IF1]";
+                    var token3 = "[IF2]";
+                    var token4 = "[/IF2]";
+                    var token5 = "[SOTIEN]";
+                    if (result.Contains(token1) && result.Contains(token2) && result.Contains(token3) && result.Contains(token4) && result.Contains(token5))
+                    {
+                        if (soTien < 0)
+                        {
+                            var index1 = result.IndexOf(token3);
+                            var index2 = result.IndexOf(token4);
+                            var length = index2 - index1 + token2.Length;
+                            var tempStr = result.Substring(index1, length);
+                            result = result.Replace(tempStr, "");
+                            result = result.Replace(token5, Math.Abs(soTien.Value).ToString("#,#0.##"));
+                            result = result.Replace(token1, "");
+                            result = result.Replace(token2, "");
+                        }
+                        else
+                        {
+                            var index1 = result.IndexOf(token1);
+                            var index2 = result.IndexOf(token2);
+                            var length = index2 - index1 + token2.Length;
+                            var tempStr = result.Substring(index1, length);
+                            result = result.Replace(tempStr, "");
+                            result = result.Replace(token5, soTien.Value.ToString("#,#0.##"));
+                            result = result.Replace(token3, "");
+                            result = result.Replace(token4, "");
+                        }
+                    }
+                       
                 }
             }
             // Chi tiết đề xuất cấp phát tài sản

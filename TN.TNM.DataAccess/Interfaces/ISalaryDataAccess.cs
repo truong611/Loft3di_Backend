@@ -66,5 +66,6 @@ namespace TN.TNM.DataAccess.Interfaces
         SendMailDuLieuChamCongBatThuongResult SendMailDuLieuChamCongBatThuong(
             SendMailDuLieuChamCongBatThuongParameter parameter);
         GetDataBaoCaoAllowancesResult GetDataBaoCaoAllowances(GetDataBaoCaoAllowancesParameter parameter);
+        DownloadTemplateImportResult DownloadTemplateImport(DownloadTemplateImportParameter parameter);
     }
 }

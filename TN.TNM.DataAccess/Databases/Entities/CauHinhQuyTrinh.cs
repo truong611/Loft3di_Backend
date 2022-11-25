@@ -11,5 +11,6 @@ namespace TN.TNM.DataAccess.Databases.Entities
         public string QuyTrinh { get; set; }
         public Guid QuyTrinhId { get; set; }
         public Guid? TenantId { get; set; }
+        public int LoaiCauHinh { get; set; }
     }
 }

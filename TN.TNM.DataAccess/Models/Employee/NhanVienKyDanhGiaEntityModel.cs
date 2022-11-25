@@ -16,6 +16,7 @@ namespace TN.TNM.DataAccess.Models.Employee
         public Guid? NguoiDanhGiaId { get; set; }
         public Guid? PositionId { get; set; }
         public string NguoiDanhGiaName { get; set; }
+        public string EmployeeCode { get; set; }
         public Guid? NguoiDuocDanhGiaId { get; set; }
         public string NguoiDuocDanhGiaName { get; set; }
         public int? BuocHienTai { get; set; }

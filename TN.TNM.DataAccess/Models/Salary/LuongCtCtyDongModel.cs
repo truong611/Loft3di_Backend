@@ -13,6 +13,7 @@ namespace TN.TNM.DataAccess.Models.Salary
         public Guid OrganizationId { get; set; }
         public Guid PositionId { get; set; }
         public decimal BaseBhxh { get; set; }
+        public decimal BaseBhtn { get; set; }
         public decimal Bhxh { get; set; }
         public decimal Bhyt { get; set; }
         public decimal Bhtn { get; set; }

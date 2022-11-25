@@ -341,6 +341,23 @@ namespace TN.TNM.DataAccess.Databases.DAO
                             isShowTuChoi = true;
                         }
                     }
+                    //Nếu là Phê duyệt trưởng bộ phận cấp trên
+                    else if (buocHienTai?.LoaiPheDuyet == 3)
+                    {
+                        //Lấy phòng ban cấp trên của người đề xuất
+                        var _emp = context.Employee.FirstOrDefault(x => x.EmployeeId == user.EmployeeId);
+
+                        var exists = context.PhongBanPheDuyetDoiTuong.FirstOrDefault(x =>
+                            x.ObjectNumber == deXuatXinNghi.DeXuatXinNghiId && x.DoiTuongApDung == 9 &&
+                            x.IsPheDuyetCapTren == true && x.OrganizationId == _emp.OrganizationId);
+
+                        //Nếu phòng ban cấp trên của người đang đăng nhập giống trong cấu hình thì
+                        if (exists != null)
+                        {
+                            isShowPheDuyet = true;
+                            isShowTuChoi = true;
+                        }
+                    }
                 }
 
                 //Trạng thái Từ chối và User đăng nhập là người tạo đề xuất
@@ -410,8 +427,8 @@ namespace TN.TNM.DataAccess.Databases.DAO
                     };
                 }
 
-                var thanhVienPhongBan =
-                    context.ThanhVienPhongBan.FirstOrDefault(x => x.EmployeeId == employee.EmployeeId);
+                var listThanhVienPhongBan =
+                    context.ThanhVienPhongBan.Where(x => x.EmployeeId == employee.EmployeeId).ToList();
 
                 var listStatus = GeneralList.GetTrangThais("TrangThaiDeXuatXinNghi");
                 var listKyHieuValue = GetListLoaiDeXuat();
@@ -455,76 +472,92 @@ namespace TN.TNM.DataAccess.Databases.DAO
                 //Nếu người dùng không thuộc phòng ban được quyền xem tất dữ liệu của các phòng ban khác
                 else
                 {
-                    //Nếu là trưởng bộ phận
-                    if (thanhVienPhongBan.IsManager == 1)
-                    {
-                        //Lấy ra list đối tượng id mà người dùng phụ trách phê duyệt
-                        var listId = context.PhongBanPheDuyetDoiTuong
-                            .Where(x => x.DoiTuongApDung == 9 && 
-                                        x.OrganizationId == organization.OrganizationId).Select(y => y.ObjectNumber)
-                            .ToList();
+                    var _listDeXuatXinNghi = (from dxxn in context.DeXuatXinNghi
+                                              join emp in context.Employee on dxxn.EmployeeId equals emp.EmployeeId
+                                              join org in context.Organization on emp.OrganizationId equals org.OrganizationId into tmpOrg
+                                              from org in tmpOrg.DefaultIfEmpty()
+                                              where
+                                                  (string.IsNullOrWhiteSpace(parameter.Code) ||
+                                                   dxxn.Code.ToLower().Trim().Contains(parameter.Code.ToLower().Trim())) &&
+                                                  (string.IsNullOrWhiteSpace(parameter.EmployeeCode) || emp.EmployeeCode.ToLower().Trim()
+                                                       .Contains(parameter.EmployeeCode.ToLower().Trim())) &&
+                                                  (string.IsNullOrWhiteSpace(parameter.EmployeeName) || emp.EmployeeName.ToLower().Trim()
+                                                       .Contains(parameter.EmployeeName.ToLower().Trim())) &&
+                                                  dxxn.EmployeeId == employee.EmployeeId &&
+                                                  (parameter.ListStatusId.Count == 0 || parameter.ListStatusId.Contains(dxxn.TrangThaiId)) &&
+                                                  (parameter.ListLoaiDeXuatId.Count == 0 ||
+                                                   parameter.ListLoaiDeXuatId.Contains(dxxn.LoaiDeXuatId))
+                                              select new DeXuatXinNghiModel()
+                                              {
+                                                  DeXuatXinNghiId = dxxn.DeXuatXinNghiId,
+                                                  Code = dxxn.Code,
+                                                  EmployeeId = dxxn.EmployeeId,
+                                                  EmployeeCodeName = emp.EmployeeCode + " - " + emp.EmployeeName,
+                                                  OrganizationName = org.OrganizationName,
+                                                  StatusName = listStatus.FirstOrDefault(x => x.Value == dxxn.TrangThaiId).Name,
+                                                  CreatedDate = dxxn.CreatedDate,
+                                                  TrangThaiId = dxxn.TrangThaiId,
+                                                  TenLoaiDeXuat = listKyHieuChamCong.FirstOrDefault(x => x.Value == dxxn.LoaiDeXuatId).Name,
+                                                  BackgroupStatusColor = GetBackgroundStatusColor(dxxn.TrangThaiId)
+                                              }).OrderByDescending(z => z.CreatedDate).ToList();
 
-                        listDeXuatXinNghi = (from dxxn in context.DeXuatXinNghi
-                                             join emp in context.Employee on dxxn.EmployeeId equals emp.EmployeeId
-                                             join org in context.Organization on emp.OrganizationId equals org.OrganizationId into tmpOrg
-                                             from org in tmpOrg.DefaultIfEmpty()
-                                             where
-                                                 (string.IsNullOrWhiteSpace(parameter.Code) ||
-                                                  dxxn.Code.ToLower().Trim().Contains(parameter.Code.ToLower().Trim())) &&
-                                                 (string.IsNullOrWhiteSpace(parameter.EmployeeCode) || emp.EmployeeCode.ToLower().Trim()
-                                                      .Contains(parameter.EmployeeCode.ToLower().Trim())) &&
-                                                 (string.IsNullOrWhiteSpace(parameter.EmployeeName) || emp.EmployeeName.ToLower().Trim()
-                                                      .Contains(parameter.EmployeeName.ToLower().Trim())) &&
-                                                 (dxxn.EmployeeId == employee.EmployeeId || listId.Contains(dxxn.DeXuatXinNghiId)) &&
-                                                 (parameter.ListStatusId.Count == 0 || parameter.ListStatusId.Contains(dxxn.TrangThaiId)) &&
-                                                 (parameter.ListLoaiDeXuatId.Count == 0 ||
-                                                  parameter.ListLoaiDeXuatId.Contains(dxxn.LoaiDeXuatId))
-                                             select new DeXuatXinNghiModel()
-                                             {
-                                                 DeXuatXinNghiId = dxxn.DeXuatXinNghiId,
-                                                 Code = dxxn.Code,
-                                                 EmployeeId = dxxn.EmployeeId,
-                                                 EmployeeCodeName = emp.EmployeeCode + " - " + emp.EmployeeName,
-                                                 OrganizationName = org.OrganizationName,
-                                                 StatusName = listStatus.FirstOrDefault(x => x.Value == dxxn.TrangThaiId).Name,
-                                                 CreatedDate = dxxn.CreatedDate,
-                                                 TrangThaiId = dxxn.TrangThaiId,
-                                                 TenLoaiDeXuat = listKyHieuChamCong.FirstOrDefault(x => x.Value == dxxn.LoaiDeXuatId).Name,
-                                                 BackgroupStatusColor = GetBackgroundStatusColor(dxxn.TrangThaiId)
-                                             }).OrderByDescending(z => z.CreatedDate).ToList();
-                    }
-                    else
+                    listDeXuatXinNghi.AddRange(_listDeXuatXinNghi);
+
+                    listThanhVienPhongBan.ForEach(item =>
                     {
-                        listDeXuatXinNghi = (from dxxn in context.DeXuatXinNghi
-                                             join emp in context.Employee on dxxn.EmployeeId equals emp.EmployeeId
-                                             join org in context.Organization on emp.OrganizationId equals org.OrganizationId into tmpOrg
-                                             from org in tmpOrg.DefaultIfEmpty()
-                                             where
-                                                 (string.IsNullOrWhiteSpace(parameter.Code) ||
-                                                  dxxn.Code.ToLower().Trim().Contains(parameter.Code.ToLower().Trim())) &&
-                                                 (string.IsNullOrWhiteSpace(parameter.EmployeeCode) || emp.EmployeeCode.ToLower().Trim()
-                                                      .Contains(parameter.EmployeeCode.ToLower().Trim())) &&
-                                                 (string.IsNullOrWhiteSpace(parameter.EmployeeName) || emp.EmployeeName.ToLower().Trim()
-                                                      .Contains(parameter.EmployeeName.ToLower().Trim())) &&
-                                                 dxxn.EmployeeId == employee.EmployeeId &&
-                                                 (parameter.ListStatusId.Count == 0 || parameter.ListStatusId.Contains(dxxn.TrangThaiId)) &&
-                                                 (parameter.ListLoaiDeXuatId.Count == 0 ||
-                                                  parameter.ListLoaiDeXuatId.Contains(dxxn.LoaiDeXuatId))
-                                             select new DeXuatXinNghiModel()
-                                             {
-                                                 DeXuatXinNghiId = dxxn.DeXuatXinNghiId,
-                                                 Code = dxxn.Code,
-                                                 EmployeeId = dxxn.EmployeeId,
-                                                 EmployeeCodeName = emp.EmployeeCode + " - " + emp.EmployeeName,
-                                                 OrganizationName = org.OrganizationName,
-                                                 StatusName = listStatus.FirstOrDefault(x => x.Value == dxxn.TrangThaiId).Name,
-                                                 CreatedDate = dxxn.CreatedDate,
-                                                 TrangThaiId = dxxn.TrangThaiId,
-                                                 TenLoaiDeXuat = listKyHieuChamCong.FirstOrDefault(x => x.Value == dxxn.LoaiDeXuatId).Name,
-                                                 BackgroupStatusColor = GetBackgroundStatusColor(dxxn.TrangThaiId)
-                                             }).OrderByDescending(z => z.CreatedDate).ToList();
-                    }
+                        //Nếu là trưởng bộ phận
+                        if (item.IsManager == 1)
+                        {
+                            //Lấy ra list đối tượng id mà người dùng phụ trách phê duyệt
+                            var listId = context.PhongBanPheDuyetDoiTuong
+                                .Where(x => x.DoiTuongApDung == 9 &&
+                                            x.OrganizationId == item.OrganizationId).Select(y => y.ObjectNumber)
+                                .ToList();
+
+                            //Lọc ra các Id các bản ghi đã được lấy ở trên
+                            var listIgnoreId = listDeXuatXinNghi.Select(y => y.DeXuatXinNghiId).ToList();
+
+                            var listDeXuatXinNghi_CanPheDuyet = (from dxxn in context.DeXuatXinNghi
+                                                                 join emp in context.Employee on dxxn.EmployeeId equals emp.EmployeeId
+                                                                 join org in context.Organization on emp.OrganizationId equals org.OrganizationId into
+                                                                     tmpOrg
+                                                                 from org in tmpOrg.DefaultIfEmpty()
+                                                                 where
+                                                                     (listIgnoreId.Count == 0 || !listIgnoreId.Contains(dxxn.DeXuatXinNghiId)) &&
+                                                                     (string.IsNullOrWhiteSpace(parameter.Code) ||
+                                                                      dxxn.Code.ToLower().Trim().Contains(parameter.Code.ToLower().Trim())) &&
+                                                                     (string.IsNullOrWhiteSpace(parameter.EmployeeCode) || emp.EmployeeCode.ToLower()
+                                                                          .Trim()
+                                                                          .Contains(parameter.EmployeeCode.ToLower().Trim())) &&
+                                                                     (string.IsNullOrWhiteSpace(parameter.EmployeeName) || emp.EmployeeName.ToLower()
+                                                                          .Trim()
+                                                                          .Contains(parameter.EmployeeName.ToLower().Trim())) &&
+                                                                     listId.Contains(dxxn.DeXuatXinNghiId) &&
+                                                                     (parameter.ListStatusId.Count == 0 ||
+                                                                      parameter.ListStatusId.Contains(dxxn.TrangThaiId)) &&
+                                                                     (parameter.ListLoaiDeXuatId.Count == 0 ||
+                                                                      parameter.ListLoaiDeXuatId.Contains(dxxn.LoaiDeXuatId))
+                                                                 select new DeXuatXinNghiModel()
+                                                                 {
+                                                                     DeXuatXinNghiId = dxxn.DeXuatXinNghiId,
+                                                                     Code = dxxn.Code,
+                                                                     EmployeeId = dxxn.EmployeeId,
+                                                                     EmployeeCodeName = emp.EmployeeCode + " - " + emp.EmployeeName,
+                                                                     OrganizationName = org.OrganizationName,
+                                                                     StatusName = listStatus.FirstOrDefault(x => x.Value == dxxn.TrangThaiId).Name,
+                                                                     CreatedDate = dxxn.CreatedDate,
+                                                                     TrangThaiId = dxxn.TrangThaiId,
+                                                                     TenLoaiDeXuat = listKyHieuChamCong.FirstOrDefault(x => x.Value == dxxn.LoaiDeXuatId)
+                                                                         .Name,
+                                                                     BackgroupStatusColor = GetBackgroundStatusColor(dxxn.TrangThaiId)
+                                                                 }).OrderByDescending(z => z.CreatedDate).ToList();
+
+                            listDeXuatXinNghi.AddRange(listDeXuatXinNghi_CanPheDuyet);
+                        }
+                    });
                 }
+
+                listDeXuatXinNghi = listDeXuatXinNghi.OrderByDescending(z => z.CreatedDate).ToList();
 
                 return new SearchEmployeeRequestResult
                 {
@@ -1042,32 +1075,6 @@ namespace TN.TNM.DataAccess.Databases.DAO
             }
 
             return listDeXuatXinNghiChiTiet;
-        }
-
-        private List<int> GetListCanPheDuyet(Guid employeeId)
-        {
-            var result = new List<int>();
-            int doiTuongApDung = 9;
-            
-            //Quy trình
-            var quyTrinh = context.QuyTrinh.FirstOrDefault(x => x.DoiTuongApDung == doiTuongApDung &&
-                                                                x.HoatDong);
-
-            //Nếu không có quy trình
-            if (quyTrinh == null)
-            {
-                return result;
-            }
-
-            //Lấy list id đối tượng 
-            var listObjectNumber = context.CacBuocApDung.Where(x => x.QuyTrinhId == quyTrinh.Id &&
-                                                                    x.DoiTuongApDung == doiTuongApDung &&
-                                                                    x.ObjectNumber != null)
-                .Select(y => y.ObjectNumber).ToList();
-
-
-
-            return result;
         }
     }
 }

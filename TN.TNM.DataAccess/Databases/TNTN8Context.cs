@@ -1926,7 +1926,11 @@ namespace TN.TNM.DataAccess.Databases
 
                 entity.Property(e => e.MaTest).HasMaxLength(255);
 
+                entity.Property(e => e.NgayHenNop).HasColumnType("datetime");
+
                 entity.Property(e => e.NgayNghiViec).HasColumnType("datetime");
+
+                entity.Property(e => e.NgayNop).HasColumnType("datetime");
 
                 entity.Property(e => e.ProbationEndDate).HasColumnType("datetime");
 
@@ -5499,6 +5503,8 @@ namespace TN.TNM.DataAccess.Databases
             {
                 entity.Property(e => e.Id).ValueGeneratedNever();
 
+                entity.Property(e => e.LoaiCauHinh).HasDefaultValueSql("((1))");
+
                 entity.Property(e => e.QuyTrinh).HasMaxLength(1000);
 
                 entity.Property(e => e.SoTienTu).HasColumnType("money");
@@ -6315,6 +6321,8 @@ namespace TN.TNM.DataAccess.Databases
 
             modelBuilder.Entity<LuongCtBaoHiem>(entity =>
             {
+                entity.Property(e => e.BaseBhtn).HasColumnType("decimal(18, 2)");
+
                 entity.Property(e => e.BaseBhxh).HasColumnType("decimal(18, 2)");
 
                 entity.Property(e => e.Bhtn).HasColumnType("decimal(18, 2)");
@@ -6332,6 +6340,8 @@ namespace TN.TNM.DataAccess.Databases
 
             modelBuilder.Entity<LuongCtCtyDong>(entity =>
             {
+                entity.Property(e => e.BaseBhtn).HasColumnType("decimal(18, 2)");
+
                 entity.Property(e => e.BaseBhxh).HasColumnType("decimal(18, 2)");
 
                 entity.Property(e => e.Bhtn).HasColumnType("decimal(18, 2)");

@@ -243,7 +243,9 @@ namespace TN.TNM.DataAccess.Interfaces
         DownloadTemplateImportHDNSResult DownloadTemplateImportHDNS(DownloadTemplateImportHDNSParameter parameter);
         GetMasterDateImportHDNSResult GetMasterDateImportHDNS(GetMasterDateImportHDNSParameter parameter);
         ImportHDNSResult ImportHDNS(ImportHDNSParameter parameter);
-
-
+        ChangeNgayNopTaiLieuResult ChangeNgayNopTaiLieu(ChangeNgayNopTaiLieuParameter parameter);
+        ChangeDaNopResult ChangeDaNop(ChangeDaNopParameter parameter);
+        ImportThongTinGiaDinhResult ImportThongTinGiaDinh(ImportThongTinGiaDinhParameter parameter);
+        CheckPhongBanTaoKyDanhGiaResult CheckPhongBanTaoKyDanhGia(CheckPhongBanTaoKyDanhGiaParameter parameter);
     }
 }

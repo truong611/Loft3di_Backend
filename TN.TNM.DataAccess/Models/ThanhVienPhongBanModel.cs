@@ -12,5 +12,6 @@ namespace TN.TNM.DataAccess.Models
         public int IsManager { get; set; }
         public string OrganizationName { get; set; }
         public string EmployeeCodeName { get; set; }
+        public bool IsPhongBanChinh { get; set; }
     }
 }

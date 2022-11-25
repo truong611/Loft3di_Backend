@@ -134,6 +134,9 @@ namespace TN.TNM.DataAccess.Models.Employee
         public string NguoiDanhGiaName { get; set; }
         public bool? XemLuong { get; set; }
 
+        //cho hoàn ứng
+        public decimal? tamUng { get; set; }
+
 
         public EmployeeEntityModel() { }
 

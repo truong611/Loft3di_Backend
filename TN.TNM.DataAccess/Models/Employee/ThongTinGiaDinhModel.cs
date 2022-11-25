@@ -7,6 +7,7 @@ namespace TN.TNM.DataAccess.Models.Employee
     public class ThongTinGiaDinhModel
     {
         public Guid EmployeeId { get; set; }
+        public string EmployeeCode { get; set; }
         public Guid? ContactId { get; set; }
         public string FullName { get; set; }
         public string Phone { get; set; }

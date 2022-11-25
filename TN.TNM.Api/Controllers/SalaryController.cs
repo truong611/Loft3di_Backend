@@ -452,5 +452,13 @@ namespace TN.TNM.Api.Controllers
         {
             return this._iSalaryDataAccess.GetDataBaoCaoAllowances(request);
         }
+
+        [HttpPost]
+        [Route("api/salary/downloadTemplateImport")]
+        [Authorize(Policy = "Member")]
+        public DownloadTemplateImportResult DownloadTemplateImport([FromBody] DownloadTemplateImportParameter request)
+        {
+            return this._iSalaryDataAccess.DownloadTemplateImport(request);
+        }
     }
 }
